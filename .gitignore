@@ -1,0 +1,74 @@
+# macOS
+.DS_Store
+
+# Editors / IDEs
+.idea/
+.vscode/
+*.iml
+
+# Local Codex metadata
+.codex/
+
+# Environment files
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Python caches and tooling
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.hypothesis/
+.tox/
+.nox/
+
+# Python coverage / build
+.coverage
+.coverage.*
+htmlcov/
+.cache/
+.eggs/
+*.egg-info/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Python package managers
+.poetry-cache/
+
+# Node dependencies and tooling
+node_modules/
+.pnpm-store/
+.npm/
+.yarn/
+
+# Frontend build outputs
+.vite/
+coverage/
+*.tsbuildinfo
+
+# Databases and local state
+*.sqlite
+*.sqlite3
+*.db
+
+# Local overrides and temp files
+*.local
+tmp/
+temp/
