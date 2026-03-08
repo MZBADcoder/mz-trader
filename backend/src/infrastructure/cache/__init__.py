@@ -1,0 +1,2 @@
+"""Cache integration package placeholder."""
+

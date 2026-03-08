@@ -1,0 +1,2 @@
+"""Composition root placeholder."""
+

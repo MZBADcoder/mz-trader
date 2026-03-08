@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "trader-refactor-backend"
+version = "0.1.0"
+description = "Backend scaffold for trader-refactor"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi",
+  "uvicorn[standard]",
+  "pydantic-settings",
+  "sqlalchemy>=2",
+  "alembic",
+  "redis",
+  "massive>=2.2,<3",
+  "websockets",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+  "httpx",
+  "ruff",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+py-modules = ["main", "settings"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
