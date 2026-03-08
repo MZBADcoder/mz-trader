@@ -9,7 +9,32 @@
 
 - `backend/`: FastAPI backend, async-first, DDD layering, PostgreSQL persistence.
 - `frontend/`: frontend application workspace. It is currently empty and should be treated as a fresh app boundary.
-- `docs/`: shared reference material and long-form design notes.
+- `docs/`: shared reference material, product design records, staged evolution plans, and backlog notes.
+
+## Documentation-Driven Project Management
+
+- This project is intentionally managed through repository documents instead of external tools such as Jira.
+- docs could be written in both English and Simplified Chinese.
+- Treat `docs/` as working project memory for both the developer and Codex agents.
+- When a task is driven by a product iteration, read the relevant PRD and evolution docs before changing code.
+- When a change materially affects scope, workflow, API usage, or phased delivery, update the relevant document in the same task when practical.
+
+## Docs Directory Guide
+
+- `docs/external-api-reference/`: external provider or third-party API notes.
+- `docs/prd/`: product requirement documents for major iterations. Each PRD should describe scope, goals, non-goals, scenarios, functional requirements, and acceptance criteria.
+- `docs/backend-evolution/`: backend execution plans derived from a PRD. Use these documents to break one PRD into staged backend work. If a PRD is an epic, each file here should represent one large backend task or phase.
+- `docs/frontend-evolution/`: frontend execution plans derived from a PRD. Use these documents to break one PRD into staged frontend work. If a PRD is an epic, each file here should represent one large frontend task or phase.
+- `docs/frontend-evolution/design/`: text-based frontend prototype and interaction design notes. Since this project does not currently use Figma, use this directory for iterative written descriptions of layouts, flows, states, and interaction details.
+- `docs/todo/`: backlog notes for incomplete or intentionally deferred work. Record partially finished features, known gaps, and bugs found during testing that are not being fixed immediately.
+
+## Document Usage Rules
+
+- PRD defines the target outcome; evolution docs define phased implementation; todo records known leftovers after a phase ships.
+- Do not use `docs/todo/` as a substitute for product scope. If something changes the intended product behavior, update the PRD or evolution doc instead of only adding a todo note.
+- External API usage should be backed by `docs/external-api-reference/` when the integration is important enough to affect design or repeated implementation work.
+- Frontend design decisions that are currently expressed only in chat should be written into `docs/frontend-evolution/design/` once they start guiding implementation.
+- Keep documents actionable. Prefer concrete scope, constraints, acceptance criteria, open questions, and next steps over narrative filler.
 
 ## Working Agreement
 
@@ -32,6 +57,7 @@
 - Backend-only business logic, persistence rules, and integration code belong in `backend/`.
 - Frontend-only UI composition, client-side state, and view models belong in `frontend/`.
 - Cross-cutting operational docs, onboarding notes, and architectural decisions belong in `docs/` or the nearest relevant package README/ARCHITECTURE file.
+- Product planning, phased delivery notes, external API documentation, text prototypes, and backlog records belong in the appropriate `docs/` subdirectory instead of ad hoc notes elsewhere.
 
 ## Quality Bar
 
@@ -39,6 +65,7 @@
 - Prefer explicit structure over convenience shortcuts that blur frontend/backend boundaries.
 - Preserve nested architecture constraints instead of bypassing them for speed.
 - Add or update documentation when introducing a new cross-project convention, external dependency, or integration workflow.
+- Keep project-management documents aligned with delivered code so repository context stays useful for future agent runs.
 
 ## Git Commit Message Convention
 
