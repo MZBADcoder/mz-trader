@@ -6,12 +6,13 @@ build-backend = "setuptools.build_meta"
 name = "trader-refactor-backend"
 version = "0.1.0"
 description = "Backend scaffold for trader-refactor"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<4.0"
 dependencies = [
   "fastapi",
   "uvicorn[standard]",
   "pydantic-settings",
   "sqlalchemy>=2",
+  "asyncpg",
   "alembic",
   "redis",
   "massive>=2.2,<3",
@@ -24,6 +25,9 @@ dev = [
   "httpx",
   "ruff",
 ]
+
+[tool.poetry]
+package-mode = false
 
 [tool.setuptools]
 package-dir = {"" = "src"}

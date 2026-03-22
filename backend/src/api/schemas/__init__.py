@@ -1,2 +1,1 @@
-"""API DTO package placeholder."""
-
+"""API DTO package."""
