@@ -22,8 +22,7 @@ class GetWatchlistService:
 
     async def execute(self, *, user_id: str) -> list[WatchlistItem]:
         async with self._uow_factory.build() as uow:
-            watchlist = _require_watchlist_repository(uow)
-            return await watchlist.list_by_user(user_id)
+            return await uow.watchlist.list_by_user(user_id)
 
 
 class AddWatchlistItemService:
@@ -44,17 +43,16 @@ class AddWatchlistItemService:
             raise WatchlistTickerNotSupportedError()
 
         async with self._uow_factory.build() as uow:
-            watchlist = _require_watchlist_repository(uow)
-            await watchlist.lock_owner(user_id)
+            await uow.watchlist.lock_owner(user_id)
 
-            if await watchlist.exists(user_id=user_id, ticker=normalized_ticker):
+            if await uow.watchlist.exists(user_id=user_id, ticker=normalized_ticker):
                 raise WatchlistTickerDuplicateError()
 
-            item_count = await watchlist.count_by_user(user_id)
+            item_count = await uow.watchlist.count_by_user(user_id)
             if item_count >= WATCHLIST_ITEM_LIMIT:
                 raise WatchlistLimitExceededError()
 
-            item = await watchlist.add(user_id=user_id, ticker=normalized_ticker)
+            item = await uow.watchlist.add(user_id=user_id, ticker=normalized_ticker)
             await uow.commit()
             return item
 
@@ -69,15 +67,7 @@ class DeleteWatchlistItemService:
         normalized_ticker = validate_ticker(ticker)
 
         async with self._uow_factory.build() as uow:
-            watchlist = _require_watchlist_repository(uow)
-            deleted = await watchlist.delete(user_id=user_id, ticker=normalized_ticker)
+            deleted = await uow.watchlist.delete(user_id=user_id, ticker=normalized_ticker)
             if not deleted:
                 raise WatchlistTickerNotFoundError()
             await uow.commit()
-
-
-def _require_watchlist_repository(uow) -> object:
-    watchlist = getattr(uow, "watchlist", None)
-    if watchlist is None:
-        raise RuntimeError("Watchlist repository is not available in the active unit of work.")
-    return watchlist
