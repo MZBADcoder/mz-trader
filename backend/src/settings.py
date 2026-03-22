@@ -15,9 +15,15 @@ class Settings(BaseSettings):
     app_name: str = "trader-refactor-backend"
     app_env: str = "dev"
     app_secret_key: str = "replace-with-strong-random-secret"
+    auth_access_token_ttl_seconds: int = 86_400
+    auth_jwt_algorithm: str = "HS256"
+    password_hash_iterations: int = 600_000
+    password_hash_salt_bytes: int = 16
 
     massive_api_key: str = ""
     massive_stock_plan: str = "developer"
+    massive_base_url: str = "https://api.massive.com"
+    massive_timeout_seconds: float = 10.0
 
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/trader_refactor"
     redis_url: str = "redis://localhost:6379/0"

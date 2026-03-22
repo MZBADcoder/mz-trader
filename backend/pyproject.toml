@@ -15,6 +15,7 @@ dependencies = [
   "asyncpg",
   "alembic",
   "redis",
+  "httpx",
   "massive>=2.2,<3",
   "websockets",
 ]
