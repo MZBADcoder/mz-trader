@@ -139,7 +139,7 @@ def _build_app(container: FakeContainer) -> FastAPI:
 def test_register_route_returns_auth_session() -> None:
     client = TestClient(_build_app(FakeContainer()))
 
-    response = client.post("/api/v1/auth/register", json={"email": "user@example.com", "password": "secret"})
+    response = client.post("/api/v1/auth/register", json={"email": "user@example.com", "password": "secret123"})
 
     assert response.status_code == 201
     assert response.json()["user"]["id"] == "6f9ee6e5-fcd8-4567-a356-b3d8801cb6ef"
@@ -151,7 +151,7 @@ def test_register_route_returns_shared_error_payload() -> None:
 
     response = client.post(
         "/api/v1/auth/register",
-        json={"email": "user@example.com", "password": "secret"},
+        json={"email": "user@example.com", "password": "secret123"},
         headers={"X-Request-ID": "req-12345678"},
     )
 
@@ -168,6 +168,16 @@ def test_watchlist_route_requires_authentication() -> None:
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "AUTH_REQUIRED"
     assert response.json()["error"]["request_id"] == "req-87654321"
+
+
+def test_register_route_rejects_short_password() -> None:
+    client = TestClient(_build_app(FakeContainer()))
+
+    response = client.post("/api/v1/auth/register", json={"email": "user@example.com", "password": "short"})
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
 
 def test_auth_me_route_returns_token_expired() -> None:
     client = TestClient(_build_app(FakeContainer(expired_token=True)))

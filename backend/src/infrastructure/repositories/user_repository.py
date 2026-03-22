@@ -6,9 +6,11 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from domain.entities import User
+from domain.exceptions import AuthEmailAlreadyExistsError
 from domain.rules import normalize_email
 from infrastructure.db.mappers import to_user_entity
 from infrastructure.db.models import UserModel
@@ -31,7 +33,11 @@ class UserRepository:
 
     async def get_by_id(self, user_id: str) -> User | None:
         """Fetch a user by id."""
-        stmt = select(UserModel).where(UserModel.id == uuid.UUID(user_id)).limit(1)
+        try:
+            user_uuid = uuid.UUID(user_id)
+        except ValueError:
+            return None
+        stmt = select(UserModel).where(UserModel.id == user_uuid).limit(1)
         model = await self._session.scalar(stmt)
         if model is None:
             return None
@@ -48,6 +54,9 @@ class UserRepository:
             updated_at=now,
         )
         self._session.add(model)
-        await self._session.flush()
+        try:
+            await self._session.flush()
+        except IntegrityError as exc:
+            raise AuthEmailAlreadyExistsError() from exc
         await self._session.refresh(model)
         return to_user_entity(model)

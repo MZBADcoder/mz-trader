@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, status
 
 from api.deps import get_current_user, get_login_user_service, get_register_user_service
-from api.schemas.auth import AuthRequest, AuthSessionResponse, CurrentUserResponse, UserResponse
+from api.schemas.auth import AuthSessionResponse, CurrentUserResponse, LoginRequest, RegisterRequest, UserResponse
 from application.services import LoginUserService, RegisterUserService
 from domain.entities import User
 
@@ -15,7 +15,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/register", response_model=AuthSessionResponse, status_code=status.HTTP_201_CREATED)
 async def register(
-    payload: AuthRequest,
+    payload: RegisterRequest,
     service: RegisterUserService = Depends(get_register_user_service),
 ) -> AuthSessionResponse:
     session = await service.execute(email=payload.email, password=payload.password)
@@ -29,7 +29,7 @@ async def register(
 
 @router.post("/login", response_model=AuthSessionResponse)
 async def login(
-    payload: AuthRequest,
+    payload: LoginRequest,
     service: LoginUserService = Depends(get_login_user_service),
 ) -> AuthSessionResponse:
     session = await service.execute(email=payload.email, password=payload.password)

@@ -10,7 +10,7 @@ import pytest
 
 from application.services.auth import GetCurrentUserService, LoginUserService, RegisterUserService
 from domain.entities import User
-from domain.exceptions import AuthEmailAlreadyExistsError, AuthInvalidCredentialsError, AuthTokenInvalidError
+from domain.exceptions import AuthEmailAlreadyExistsError, AuthInvalidCredentialsError, AuthTokenInvalidError, ValidationError
 
 
 def _user(*, user_id: str = "6f9ee6e5-fcd8-4567-a356-b3d8801cb6ef", email: str = "user@example.com") -> User:
@@ -97,7 +97,7 @@ def test_register_user_service_normalizes_email_and_returns_token() -> None:
         jwt_service=FakeJwtService(),
     )
 
-    result = asyncio.run(service.execute(email="  USER@Example.com ", password="secret"))
+    result = asyncio.run(service.execute(email="  USER@Example.com ", password="secret123"))
 
     assert result.user.email == "user@example.com"
     assert result.access_token == f"token-for:{result.user.id}:user@example.com"
@@ -116,7 +116,7 @@ def test_register_user_service_rejects_duplicate_email() -> None:
     )
 
     with pytest.raises(AuthEmailAlreadyExistsError):
-        asyncio.run(service.execute(email=existing.email, password="secret"))
+        asyncio.run(service.execute(email=existing.email, password="secret123"))
 
 
 def test_login_user_service_rejects_invalid_password() -> None:
@@ -134,7 +134,19 @@ def test_login_user_service_rejects_invalid_password() -> None:
         asyncio.run(service.execute(email=existing.email, password="wrong"))
 
 
-def test_get_current_user_service_rejects_missing_user() -> None:
+def test_register_user_service_rejects_short_password() -> None:
+    users = FakeUserRepository()
+    service = RegisterUserService(
+        uow_factory=FakeUowFactory(FakeUow(users)),
+        password_hasher=FakePasswordHasher(),
+        jwt_service=FakeJwtService(),
+    )
+
+    with pytest.raises(ValidationError):
+        asyncio.run(service.execute(email="user@example.com", password="short"))
+
+
+def test_get_current_user_service_rejects_invalid_subject() -> None:
     users = FakeUserRepository()
     service = GetCurrentUserService(
         uow_factory=FakeUowFactory(FakeUow(users)),

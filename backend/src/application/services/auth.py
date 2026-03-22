@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from uuid import UUID
 
 from domain.entities import User
 from domain.exceptions import AuthEmailAlreadyExistsError, AuthInvalidCredentialsError, AuthTokenInvalidError
-from domain.rules import normalize_email
+from domain.rules import normalize_email, validate_password
 from infrastructure.db.uow import SqlAlchemyUnitOfWorkFactory
 from infrastructure.external.jwt_service import JwtService
 from infrastructure.external.password_hasher import PBKDF2PasswordHasher
@@ -38,15 +39,16 @@ class RegisterUserService:
 
     async def execute(self, *, email: str, password: str) -> AuthSession:
         normalized_email = normalize_email(email)
+        validated_password = validate_password(password)
         async with self._uow_factory.build() as uow:
-            assert uow.users is not None
-            existing_user = await uow.users.get_by_email(normalized_email)
+            users = _require_user_repository(uow)
+            existing_user = await users.get_by_email(normalized_email)
             if existing_user is not None:
                 raise AuthEmailAlreadyExistsError()
 
-            user = await uow.users.add(
+            user = await users.add(
                 email=normalized_email,
-                password_hash=self._password_hasher.hash_password(password),
+                password_hash=self._password_hasher.hash_password(validated_password),
             )
             await uow.commit()
 
@@ -76,8 +78,8 @@ class LoginUserService:
     async def execute(self, *, email: str, password: str) -> AuthSession:
         normalized_email = normalize_email(email)
         async with self._uow_factory.build() as uow:
-            assert uow.users is not None
-            user = await uow.users.get_by_email(normalized_email)
+            users = _require_user_repository(uow)
+            user = await users.get_by_email(normalized_email)
 
         if user is None or not self._password_hasher.verify_password(password, user.password_hash):
             raise AuthInvalidCredentialsError()
@@ -103,11 +105,22 @@ class GetCurrentUserService:
         user_id = payload.get("sub")
         if not isinstance(user_id, str):
             raise AuthTokenInvalidError()
+        try:
+            UUID(user_id)
+        except ValueError as exc:
+            raise AuthTokenInvalidError() from exc
 
         async with self._uow_factory.build() as uow:
-            assert uow.users is not None
-            user = await uow.users.get_by_id(user_id)
+            users = _require_user_repository(uow)
+            user = await users.get_by_id(user_id)
 
         if user is None:
             raise AuthTokenInvalidError()
         return user
+
+
+def _require_user_repository(uow) -> object:
+    users = getattr(uow, "users", None)
+    if users is None:
+        raise RuntimeError("User repository is not available in the active unit of work.")
+    return users

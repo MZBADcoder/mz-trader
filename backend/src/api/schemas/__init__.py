@@ -1,6 +1,6 @@
 """API schema exports."""
 
-from api.schemas.auth import AuthRequest, AuthSessionResponse, CurrentUserResponse, UserResponse
+from api.schemas.auth import AuthSessionResponse, CurrentUserResponse, LoginRequest, RegisterRequest, UserResponse
 from api.schemas.error import ErrorBody, ErrorResponse
 from api.schemas.health import HealthResponse
 from api.schemas.reference import TickerSearchItemResponse, TickerSearchResponse
@@ -13,7 +13,6 @@ from api.schemas.watchlist import (
 
 
 __all__ = [
-    "AuthRequest",
     "AuthSessionResponse",
     "CreateWatchlistItemRequest",
     "CreateWatchlistItemResponse",
@@ -21,6 +20,8 @@ __all__ = [
     "ErrorBody",
     "ErrorResponse",
     "HealthResponse",
+    "LoginRequest",
+    "RegisterRequest",
     "TickerSearchItemResponse",
     "TickerSearchResponse",
     "UserResponse",

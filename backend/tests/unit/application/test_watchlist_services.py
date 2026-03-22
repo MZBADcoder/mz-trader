@@ -34,6 +34,7 @@ class FakeUserRepository:
 class FakeWatchlistRepository:
     def __init__(self, items: list[WatchlistItem] | None = None) -> None:
         self.items = items or []
+        self.locked_user_ids: list[str] = []
 
     async def list_by_user(self, user_id: str) -> list[WatchlistItem]:
         return list(self.items)
@@ -43,6 +44,9 @@ class FakeWatchlistRepository:
 
     async def count_by_user(self, user_id: str) -> int:
         return len(self.items)
+
+    async def lock_owner(self, user_id: str) -> None:
+        self.locked_user_ids.append(user_id)
 
     async def add(self, *, user_id: str, ticker: str) -> WatchlistItem:
         item = _watchlist_item(ticker, created_at=datetime.now(UTC))
@@ -112,6 +116,7 @@ def test_add_watchlist_item_service_uppercases_and_commits() -> None:
 
     assert item.ticker == "AAPL"
     assert uow.committed is True
+    assert watchlist.locked_user_ids == ["user-1"]
 
 
 def test_add_watchlist_item_service_rejects_duplicate() -> None:

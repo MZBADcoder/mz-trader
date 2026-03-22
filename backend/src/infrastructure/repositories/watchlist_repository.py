@@ -6,11 +6,13 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import delete, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from domain.entities import WatchlistItem
+from domain.exceptions import WatchlistTickerDuplicateError
 from infrastructure.db.mappers import to_watchlist_item_entity
-from infrastructure.db.models import WatchlistItemModel
+from infrastructure.db.models import UserModel, WatchlistItemModel
 
 
 class WatchlistRepository:
@@ -49,6 +51,11 @@ class WatchlistRepository:
         count = await self._session.scalar(stmt)
         return int(count or 0)
 
+    async def lock_owner(self, user_id: str) -> None:
+        """Serialize watchlist mutations per user."""
+        stmt = select(UserModel.id).where(UserModel.id == uuid.UUID(user_id)).with_for_update()
+        await self._session.execute(stmt)
+
     async def add(self, *, user_id: str, ticker: str) -> WatchlistItem:
         """Create a watchlist item."""
         now = datetime.now(UTC)
@@ -59,7 +66,10 @@ class WatchlistRepository:
             created_at=now,
         )
         self._session.add(model)
-        await self._session.flush()
+        try:
+            await self._session.flush()
+        except IntegrityError as exc:
+            raise WatchlistTickerDuplicateError() from exc
         await self._session.refresh(model)
         return to_watchlist_item_entity(model)
 

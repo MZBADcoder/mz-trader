@@ -2,11 +2,20 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+
+from domain.rules import MIN_PASSWORD_LENGTH
 
 
-class AuthRequest(BaseModel):
-    """Register or login payload."""
+class RegisterRequest(BaseModel):
+    """Register payload."""
+
+    email: str
+    password: str = Field(min_length=MIN_PASSWORD_LENGTH)
+
+
+class LoginRequest(BaseModel):
+    """Login payload."""
 
     email: str
     password: str

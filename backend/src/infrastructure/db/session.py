@@ -22,8 +22,7 @@ def create_engine(database_url: str) -> AsyncEngine:
 
 def create_session_factory(database_url: str) -> async_sessionmaker[AsyncSession]:
     """Create a session factory bound to the configured engine."""
-    engine = create_engine(database_url)
-    return async_sessionmaker(engine, expire_on_commit=False)
+    return create_database_runtime(database_url).session_factory
 
 
 def create_database_runtime(database_url: str) -> DatabaseRuntime:

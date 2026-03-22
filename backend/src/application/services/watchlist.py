@@ -22,8 +22,8 @@ class GetWatchlistService:
 
     async def execute(self, *, user_id: str) -> list[WatchlistItem]:
         async with self._uow_factory.build() as uow:
-            assert uow.watchlist is not None
-            return await uow.watchlist.list_by_user(user_id)
+            watchlist = _require_watchlist_repository(uow)
+            return await watchlist.list_by_user(user_id)
 
 
 class AddWatchlistItemService:
@@ -40,20 +40,21 @@ class AddWatchlistItemService:
 
     async def execute(self, *, user_id: str, ticker: str) -> WatchlistItem:
         normalized_ticker = validate_ticker(ticker)
+        if not await self._reference_client.ticker_exists(normalized_ticker):
+            raise WatchlistTickerNotSupportedError()
 
         async with self._uow_factory.build() as uow:
-            assert uow.watchlist is not None
-            if await uow.watchlist.exists(user_id=user_id, ticker=normalized_ticker):
+            watchlist = _require_watchlist_repository(uow)
+            await watchlist.lock_owner(user_id)
+
+            if await watchlist.exists(user_id=user_id, ticker=normalized_ticker):
                 raise WatchlistTickerDuplicateError()
 
-            item_count = await uow.watchlist.count_by_user(user_id)
+            item_count = await watchlist.count_by_user(user_id)
             if item_count >= WATCHLIST_ITEM_LIMIT:
                 raise WatchlistLimitExceededError()
 
-            if not await self._reference_client.ticker_exists(normalized_ticker):
-                raise WatchlistTickerNotSupportedError()
-
-            item = await uow.watchlist.add(user_id=user_id, ticker=normalized_ticker)
+            item = await watchlist.add(user_id=user_id, ticker=normalized_ticker)
             await uow.commit()
             return item
 
@@ -68,8 +69,15 @@ class DeleteWatchlistItemService:
         normalized_ticker = validate_ticker(ticker)
 
         async with self._uow_factory.build() as uow:
-            assert uow.watchlist is not None
-            deleted = await uow.watchlist.delete(user_id=user_id, ticker=normalized_ticker)
+            watchlist = _require_watchlist_repository(uow)
+            deleted = await watchlist.delete(user_id=user_id, ticker=normalized_ticker)
             if not deleted:
                 raise WatchlistTickerNotFoundError()
             await uow.commit()
+
+
+def _require_watchlist_repository(uow) -> object:
+    watchlist = getattr(uow, "watchlist", None)
+    if watchlist is None:
+        raise RuntimeError("Watchlist repository is not available in the active unit of work.")
+    return watchlist

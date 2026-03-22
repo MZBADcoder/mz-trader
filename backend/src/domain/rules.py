@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import re
 
-from domain.exceptions import WatchlistTickerInvalidError
+from domain.exceptions import ValidationError, WatchlistTickerInvalidError
 
 
 WATCHLIST_ITEM_LIMIT = 50
+MIN_PASSWORD_LENGTH = 8
 TICKER_PATTERN = re.compile(r"^[A-Z0-9.-]{1,15}$")
 
 
@@ -27,3 +28,10 @@ def validate_ticker(ticker: str) -> str:
     if not TICKER_PATTERN.fullmatch(normalized):
         raise WatchlistTickerInvalidError()
     return normalized
+
+
+def validate_password(password: str) -> str:
+    """Validate a registration password."""
+    if not password.strip() or len(password) < MIN_PASSWORD_LENGTH:
+        raise ValidationError(detail=f"password: String should have at least {MIN_PASSWORD_LENGTH} characters")
+    return password
