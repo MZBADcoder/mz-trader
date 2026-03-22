@@ -209,6 +209,19 @@ Even though this document covers the full official stocks catalog, the following
 - `GET /v1/marketstatus/now`
 - `GET /v1/marketstatus/upcoming`
 
+### Reference Data For Ticker Lookup
+
+- `GET /v3/reference/tickers`
+  - supports exact ticker lookup
+  - supports `search` against ticker and/or company name
+  - can be used for:
+    - validating whether a ticker exists before adding it to a watchlist
+    - powering frontend autocomplete such as `apple` -> `AAPL`
+  - project guidance:
+    - set `market=stocks`
+    - prefer `active=true` for MVP watchlist flows
+    - normalize the Massive response in backend instead of exposing it directly to frontend
+
 ## Stocks WebSocket Catalog
 
 Official stocks WebSocket feeds currently listed in the public docs:
