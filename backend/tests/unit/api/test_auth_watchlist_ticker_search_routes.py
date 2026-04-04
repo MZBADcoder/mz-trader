@@ -1,4 +1,4 @@
-"""API route tests for auth, watchlist, and reference endpoints."""
+"""API route tests for auth, watchlist, and ticker search endpoints."""
 
 from __future__ import annotations
 
@@ -123,7 +123,7 @@ class FakeContainer:
     def get_delete_watchlist_item_service(self) -> FakeDeleteWatchlistItemService:
         return FakeDeleteWatchlistItemService()
 
-    def get_search_reference_tickers_service(self) -> FakeSearchReferenceService:
+    def get_search_tickers_service(self) -> FakeSearchReferenceService:
         return FakeSearchReferenceService()
 
 
@@ -188,11 +188,11 @@ def test_auth_me_route_returns_token_expired() -> None:
     assert response.json()["error"]["code"] == "AUTH_TOKEN_EXPIRED"
 
 
-def test_reference_search_route_returns_items() -> None:
+def test_ticker_search_route_returns_items() -> None:
     client = TestClient(_build_app(FakeContainer()))
 
     response = client.get(
-        "/api/v1/reference/tickers/search",
+        "/api/v1/ticker-search/search",
         params={"query": "apple"},
         headers={"Authorization": "Bearer valid-token"},
     )

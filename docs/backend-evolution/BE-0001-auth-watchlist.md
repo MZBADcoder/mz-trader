@@ -2,7 +2,7 @@
 
 > 状态：DRAFT
 > 关联 PRD：`docs/prd/PRD-0001-market-watch.md`
-> 范围：覆盖账号体系、watchlist，以及为 watchlist 添加服务的 ticker reference lookup；不包含 snapshot、bars、stream 的实现
+> 范围：覆盖账号体系、watchlist，以及为 watchlist 添加服务的 ticker search lookup；不包含 snapshot、bars、stream 的实现
 
 ## 1. 目标
 
@@ -55,7 +55,7 @@
 - 同一用户下 ticker 去重
 - 默认按创建顺序返回
 - 删除不存在的 ticker 返回明确业务错误
-- 添加 ticker 前，backend 需要校验该 ticker 在 Massive 的股票 reference 数据中存在
+- 添加 ticker 前，backend 需要校验该 ticker 在 Massive 的股票 ticker search 数据来源中存在
 - 为与后续 snapshot 批量接口对齐，MVP 限制单用户 watchlist 最多 `50` 个 ticker
 
 ## 4. API 设计
@@ -228,7 +228,7 @@
 
 - 统一转为大写
 - 校验 ticker 格式
-- 通过 Massive reference ticker 接口校验 ticker 存在性
+- 通过 Massive ticker search 数据接口校验 ticker 存在性
 - 若已存在则返回业务错误，不做静默成功
 
 成功响应：`201 Created`
@@ -268,9 +268,9 @@
 - `401` `AUTH_REQUIRED`
 - `404` `WATCHLIST_TICKER_NOT_FOUND`
 
-### 4.4 Ticker Reference Search API
+### 4.4 Ticker Search API
 
-#### `GET /api/v1/reference/tickers/search`
+#### `GET /api/v1/ticker-search/search`
 
 用途：
 
@@ -284,7 +284,7 @@
 
 后端行为：
 
-- 通过 Massive `GET /v3/reference/tickers` 查询
+- 通过 Massive `GET /v3/reference/tickers` 做 ticker search 查询
 - 固定带上 `market=stocks`
 - 建议固定带上 `active=true`
 - 使用 Massive 官方支持的 `search` 参数，在 ticker 与公司名中检索
@@ -335,7 +335,7 @@
 | 401 | `AUTH_INVALID_CREDENTIALS` | 登录邮箱或密码错误 |
 | 409 | `AUTH_EMAIL_ALREADY_EXISTS` | 注册邮箱已存在 |
 | 422 | `WATCHLIST_TICKER_INVALID` | ticker 不满足格式规则 |
-| 422 | `WATCHLIST_TICKER_NOT_SUPPORTED` | ticker 格式合法，但 Massive 股票 reference 数据中不存在 |
+| 422 | `WATCHLIST_TICKER_NOT_SUPPORTED` | ticker 格式合法，但 Massive 股票 ticker search 数据来源中不存在 |
 | 409 | `WATCHLIST_TICKER_DUPLICATE` | 同一用户重复添加同一 ticker |
 | 404 | `WATCHLIST_TICKER_NOT_FOUND` | 删除或查询不存在的 watchlist item |
 | 409 | `WATCHLIST_LIMIT_EXCEEDED` | watchlist 超过数量上限 |
@@ -358,7 +358,7 @@ MVP 建议采用保守规则：
   - `ticker=<normalized_ticker>`
   - `active=true`
   - `limit=1`
-- 后续如需接入 reference data，可在独立 evolution 中增强
+- 后续如需增强 ticker search 数据能力，可在独立 evolution 中增强
 
 ## 6. 数据模型建议
 
@@ -413,7 +413,7 @@ MVP 建议采用保守规则：
   - 密码哈希
   - JWT 编解码
   - SQLAlchemy ORM / repository
-  - Massive reference ticker client
+  - Massive ticker search client
 
 不引入接口层；通过具体类做依赖注入。
 
@@ -423,7 +423,7 @@ MVP 建议采用保守规则：
 
 - 确认 auth 核心流程可用
 - 确认 watchlist 规则不漂移
-- 确认 ticker reference 查询与存在性校验可用
+- 确认 ticker search 查询与存在性校验可用
 - 确认错误码与 HTTP 状态码稳定
 - 为后续 snapshot/market-data 接口提供可靠用户上下文基础
 
@@ -458,7 +458,7 @@ MVP 建议采用保守规则：
 - Massive 不存在的 ticker 返回 `422 WATCHLIST_TICKER_NOT_SUPPORTED`
 - 删除不存在 ticker 返回 `404 WATCHLIST_TICKER_NOT_FOUND`
 - watchlist 返回顺序为创建顺序
-- `reference/tickers/search` 可按公司名返回候选 ticker
+- `ticker-search/search` 可按公司名返回候选 ticker
 
 #### C. Repository / Persistence 测试
 
@@ -490,7 +490,7 @@ MVP 建议采用保守规则：
 9. 格式合法但 Massive 不存在的 ticker 被拒绝。
 10. watchlist 满 50 后继续添加被拒绝。
 11. 删除 ticker 后再次删除同一 ticker 返回 `WATCHLIST_TICKER_NOT_FOUND`。
-12. `reference/tickers/search?query=apple` 能返回 `AAPL` 等相关候选。
+12. `ticker-search/search?query=apple` 能返回 `AAPL` 等相关候选。
 
 ## 9. 可观测性设计
 
@@ -506,7 +506,7 @@ MVP 建议采用保守规则：
 
 - Backend 有可用的注册、登录、当前用户接口
 - Backend 有可用的 watchlist 增删查接口
-- Backend 有可用的 ticker reference search 接口
+- Backend 有可用的 ticker search 接口
 - 统一错误模型已落地
 - 主要 auth/watchlist 场景已有自动化测试覆盖
 - 后续 snapshot 能直接复用当前用户与 watchlist 基础

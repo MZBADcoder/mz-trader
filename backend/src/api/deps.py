@@ -11,7 +11,7 @@ from application.services import (
     GetWatchlistService,
     LoginUserService,
     RegisterUserService,
-    SearchReferenceTickersService,
+    SearchTickersService,
     DeleteWatchlistItemService,
 )
 from domain.entities import User
@@ -49,10 +49,8 @@ def get_delete_watchlist_item_service(
     return container.get_delete_watchlist_item_service()
 
 
-def get_search_reference_tickers_service(
-    container: Container = Depends(get_container),
-) -> SearchReferenceTickersService:
-    return container.get_search_reference_tickers_service()
+def get_search_tickers_service(container: Container = Depends(get_container)) -> SearchTickersService:
+    return container.get_search_tickers_service()
 
 
 def _extract_bearer_token(authorization: str | None) -> str:

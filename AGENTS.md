@@ -62,6 +62,8 @@
 ## Quality Bar
 
 - Keep changes narrow and localized to the owning workspace.
+- Prefer following the repository's existing conventions, module structure, naming, and implementation patterns before introducing a new pattern.
+- When an area already has a local practice, extend that practice unless there is a concrete reason to realign it.
 - Prefer explicit structure over convenience shortcuts that blur frontend/backend boundaries.
 - Preserve nested architecture constraints instead of bypassing them for speed.
 - Add or update documentation when introducing a new cross-project convention, external dependency, or integration workflow.

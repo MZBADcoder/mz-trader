@@ -1,4 +1,4 @@
-"""Reference service tests."""
+"""Ticker search service tests."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import asyncio
 
 import pytest
 
-from application.services.reference import SearchReferenceTickersService
+from application.services.ticker_search import SearchTickersService
 from domain.exceptions import ValidationError
 
 
@@ -15,8 +15,8 @@ class FakeReferenceClient:
         return [{"query": query, "limit": limit}]
 
 
-def test_search_reference_tickers_service_rejects_blank_query() -> None:
-    service = SearchReferenceTickersService(reference_client=FakeReferenceClient())
+def test_search_tickers_service_rejects_blank_query() -> None:
+    service = SearchTickersService(ticker_search_client=FakeReferenceClient())
 
     with pytest.raises(ValidationError):
         asyncio.run(service.execute(query="   ", limit=10))

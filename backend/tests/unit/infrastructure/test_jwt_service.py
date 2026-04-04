@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from domain.exceptions import AuthTokenExpiredError, AuthTokenInvalidError
-from infrastructure.external.jwt_service import JwtService
+from infrastructure.security.jwt_service import JwtService
 
 
 def test_jwt_service_issues_expected_claims() -> None:

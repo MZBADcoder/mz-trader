@@ -1,4 +1,4 @@
-"""Watchlist use cases."""
+"""Add watchlist item use case."""
 
 from __future__ import annotations
 
@@ -6,23 +6,11 @@ from domain.entities import WatchlistItem
 from domain.exceptions import (
     WatchlistLimitExceededError,
     WatchlistTickerDuplicateError,
-    WatchlistTickerNotFoundError,
     WatchlistTickerNotSupportedError,
 )
 from domain.rules import WATCHLIST_ITEM_LIMIT, validate_ticker
 from infrastructure.db.uow import SqlAlchemyUnitOfWorkFactory
 from infrastructure.external.massive_reference_client import MassiveReferenceClient
-
-
-class GetWatchlistService:
-    """Return the current user's watchlist."""
-
-    def __init__(self, *, uow_factory: SqlAlchemyUnitOfWorkFactory) -> None:
-        self._uow_factory = uow_factory
-
-    async def execute(self, *, user_id: str) -> list[WatchlistItem]:
-        async with self._uow_factory.build() as uow:
-            return await uow.watchlist.list_by_user(user_id)
 
 
 class AddWatchlistItemService:
@@ -55,19 +43,3 @@ class AddWatchlistItemService:
             item = await uow.watchlist.add(user_id=user_id, ticker=normalized_ticker)
             await uow.commit()
             return item
-
-
-class DeleteWatchlistItemService:
-    """Delete a ticker from the current user's watchlist."""
-
-    def __init__(self, *, uow_factory: SqlAlchemyUnitOfWorkFactory) -> None:
-        self._uow_factory = uow_factory
-
-    async def execute(self, *, user_id: str, ticker: str) -> None:
-        normalized_ticker = validate_ticker(ticker)
-
-        async with self._uow_factory.build() as uow:
-            deleted = await uow.watchlist.delete(user_id=user_id, ticker=normalized_ticker)
-            if not deleted:
-                raise WatchlistTickerNotFoundError()
-            await uow.commit()

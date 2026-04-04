@@ -1,4 +1,4 @@
-"""Ticker reference domain entities."""
+"""Ticker search domain entities."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 @dataclass(slots=True)
 class TickerSearchResult:
-    """Normalized ticker reference item returned to the application."""
+    """Normalized ticker search item returned to the application."""
 
     ticker: str
     name: str

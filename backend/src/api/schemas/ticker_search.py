@@ -1,4 +1,4 @@
-"""Ticker reference DTOs."""
+"""Ticker search DTOs."""
 
 from __future__ import annotations
 

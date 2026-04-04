@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from infrastructure.external.password_hasher import PBKDF2PasswordHasher
+from infrastructure.security.password_hasher import PBKDF2PasswordHasher
 
 
 def test_password_hasher_round_trip() -> None:

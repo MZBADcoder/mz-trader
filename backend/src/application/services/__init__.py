@@ -1,7 +1,7 @@
 """Application service exports."""
 
 from application.services.auth import AuthSession, GetCurrentUserService, LoginUserService, RegisterUserService
-from application.services.reference import SearchReferenceTickersService
+from application.services.ticker_search import SearchTickersService
 from application.services.watchlist import AddWatchlistItemService, DeleteWatchlistItemService, GetWatchlistService
 
 
@@ -13,5 +13,5 @@ __all__ = [
     "GetWatchlistService",
     "LoginUserService",
     "RegisterUserService",
-    "SearchReferenceTickersService",
+    "SearchTickersService",
 ]

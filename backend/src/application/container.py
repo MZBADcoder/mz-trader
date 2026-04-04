@@ -8,12 +8,13 @@ from application.services import (
     GetWatchlistService,
     LoginUserService,
     RegisterUserService,
-    SearchReferenceTickersService,
+    SearchTickersService,
     DeleteWatchlistItemService,
 )
 from infrastructure.db.session import create_database_runtime
 from infrastructure.db.uow import SqlAlchemyUnitOfWorkFactory
-from infrastructure.external import JwtService, MassiveReferenceClient, PBKDF2PasswordHasher
+from infrastructure.external import MassiveReferenceClient
+from infrastructure.security import JwtService, PBKDF2PasswordHasher
 from settings import Settings
 
 
@@ -60,8 +61,8 @@ class Container:
             reference_client=self._reference_client,
         )
         self._delete_watchlist_item_service = DeleteWatchlistItemService(uow_factory=self._uow_factory)
-        self._search_reference_tickers_service = SearchReferenceTickersService(
-            reference_client=self._reference_client
+        self._search_tickers_service = SearchTickersService(
+            ticker_search_client=self._reference_client
         )
 
     def get_register_user_service(self) -> RegisterUserService:
@@ -82,8 +83,8 @@ class Container:
     def get_delete_watchlist_item_service(self) -> DeleteWatchlistItemService:
         return self._delete_watchlist_item_service
 
-    def get_search_reference_tickers_service(self) -> SearchReferenceTickersService:
-        return self._search_reference_tickers_service
+    def get_search_tickers_service(self) -> SearchTickersService:
+        return self._search_tickers_service
 
     async def shutdown(self) -> None:
         """Dispose long-lived infra dependencies."""

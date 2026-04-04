@@ -114,6 +114,8 @@ API / Worker -> Application -> Infrastructure -> Domain
 ## Code Style Expectations
 
 - Favor small services with explicit names tied to a use case.
+- Prefer following the repository's existing module layout, naming, dependency patterns, and test style before introducing a new organizational pattern.
+- When the repo already has an established practice for a layer or feature area, extend that practice unless there is a clear technical reason to change it.
 - Prefer mapper functions over leaking ORM objects upward.
 - Keep settings loading centralized.
 - Avoid convenience imports that obscure layer boundaries.
