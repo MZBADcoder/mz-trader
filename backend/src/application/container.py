@@ -23,7 +23,10 @@ class Container:
 
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
-        database_runtime = create_database_runtime(settings.database_url)
+        database_runtime = create_database_runtime(
+            settings.database_url,
+            use_null_pool=settings.database_use_null_pool,
+        )
         self._engine = database_runtime.engine
         self._session_factory = database_runtime.session_factory
         self._uow_factory = SqlAlchemyUnitOfWorkFactory(self._session_factory)

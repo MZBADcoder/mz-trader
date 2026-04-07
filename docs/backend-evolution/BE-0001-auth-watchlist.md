@@ -459,6 +459,7 @@ MVP 建议采用保守规则：
 - 删除不存在 ticker 返回 `404 WATCHLIST_TICKER_NOT_FOUND`
 - watchlist 返回顺序为创建顺序
 - `ticker-search/search` 可按公司名返回候选 ticker
+- API 集成测试默认连接临时 PostgreSQL Docker 容器，不依赖开发机常驻数据库
 
 #### C. Repository / Persistence 测试
 
@@ -468,6 +469,7 @@ MVP 建议采用保守规则：
 - `watchlist_items (user_id, ticker)` 唯一约束生效
 - 用户之间 watchlist 隔离
 - 删除操作仅影响当前用户数据
+- 测试环境在每个用例开始前重建 ORM schema，保证用例隔离
 
 #### D. External Integration 测试
 

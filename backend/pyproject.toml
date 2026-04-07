@@ -12,6 +12,7 @@ dependencies = [
   "uvicorn[standard]",
   "pydantic-settings",
   "sqlalchemy>=2",
+  "greenlet",
   "asyncpg",
   "alembic",
   "redis",
@@ -25,6 +26,7 @@ dev = [
   "pytest",
   "httpx",
   "ruff",
+  "testcontainers",
 ]
 
 [tool.poetry]

@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     massive_timeout_seconds: float = 10.0
 
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/trader_refactor"
+    database_use_null_pool: bool = False
     redis_url: str = "redis://localhost:6379/0"
 
     log_level: str = "INFO"
