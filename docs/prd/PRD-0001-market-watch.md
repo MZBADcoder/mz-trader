@@ -1,4 +1,4 @@
-# PRD-0001 — 股票数据实时行情 / 数据观察
+# PRD-0001 — 股票行情 / 数据观察
 
 > 状态：IN PROGRESS (2026-03-13)
 
@@ -6,7 +6,7 @@
 
 - 本 PRD 当前仅覆盖 **美股股票（Stocks）**。
 - 本 PRD 面向后续 `docs/backend-evolution/` 与 `docs/frontend-evolution/` 的拆分，不在这里展开复杂实现细节。
-- Frontend 不直接访问 Massive；所有行情、鉴权、流式能力均通过 Backend 暴露。
+- Frontend 不直接访问 Massive；所有行情、鉴权、以及可选的数据更新能力均通过 Backend 暴露。
 - Massive 的能力边界与计划差异参考 `docs/external-api-reference/massive-stocks-api-reference.md`。
 
 ## 1. 背景
@@ -17,7 +17,7 @@
 - 用户级 watchlist 管理
 - 快照行情展示（`last/change/change_pct/open/high/low/volume`）
 - 历史 bars（day/minute）
-- 实时增量推送与断线降级（backend WS + fallback）
+- snapshots 持续刷新与可选增量更新（backend controlled refresh + fallback）
 
 目标是先把“股票主线”做到稳定可用，再考虑后续扩展。
 
@@ -28,7 +28,7 @@
 - G1：用户可完成注册、登录，并维护与自己账户绑定的 watchlist。
 - G2：用户可查看 watchlist 的批量 snapshot 行情，并感知当前数据延迟模式。
 - G3：用户可按 ticker 查看历史 bars，并支持基础时间粒度切换。
-- G4：系统具备实时更新能力；当 WS 异常时可自动降级，核心页面仍可读。
+- G4：系统具备持续更新能力；在不依赖 frontend 直连上游的前提下，页面可通过 polling 或 SSE 等方式更新，更新链路异常时核心页面仍可读。
 - G5：前后端数据口径统一，关键错误码和关键失败路径可观测。
 
 ### 2.2 非目标
@@ -51,7 +51,7 @@
 
 ### 3.2 市场数据模式
 
-- Massive 的上游计划差异通过项目配置抽象，不直接暴露给前端。
+- Massive 的上游 plan差异通过项目配置抽象，不直接暴露给前端。
 - MVP 只使用 Developer 与 Advanced 都支持的 Massive 接口能力。
 - 系统通过统一配置声明当前数据延迟模式，建议命名为 `delay_minutes`，MVP 支持：
   - `0`：实时模式
@@ -61,18 +61,18 @@
 
 ### 3.3 数据访问边界
 
-- Frontend 仅面向 Backend API / WS，不与 Massive 直接交互。
+- Frontend 仅面向 Backend API；如后续需要增量更新，也只面向 Backend 暴露的统一更新通道，不与 Massive 直接交互。
 - Backend 是唯一的数据编排与归一化入口。
 - 对历史 bars 的默认读取流程为：`frontend -> backend -> database`；数据库 miss 时由 backend 请求 Massive，成功后回写数据库，再返回 frontend。
-- 对 realtime stream 的上游连接、事件归一化、可能的 Redis fan-in / fan-out、以及 fallback 策略均由 backend 负责。
+- 对 snapshots 的共享拉取、请求合并、缓存/预热、以及后续如需增量更新时的分发与 fallback 策略均由 backend 负责。
 
 ## 4. 用户场景
 
-1. 用户完成注册并登录后进入 `/terminal`，看到自己的 watchlist、实时连接状态与当前数据模式。
+1. 用户完成注册并登录后进入 `/terminal`，看到自己的 watchlist、当前数据模式，以及快照新鲜度或更新时间。
 2. 用户新增 `AAPL`、`NVDA` 等 ticker，列表显示最新快照。
 3. 用户刷新页面后，watchlist 仍然存在，因为其已与用户账户持久化绑定。
 4. 用户点击某个 ticker 查看 bars，并切换 `1m/5m/15m/60m/day/week/month` 等基础时间粒度。
-5. 当 WS 正常时，页面持续收到增量更新；当 WS 异常时，前端进入降级状态并通过 backend fallback 维持可读。
+5. 页面通过 snapshots 刷新或可选增量更新机制持续更新；当更新链路异常时，前端进入降级状态并通过 backend fallback 维持可读。
 
 ## 5. 统一领域口径
 
@@ -89,8 +89,6 @@
 - `market_status`：市场状态，MVP 统一为 `pre_market | regular | after_hours | closed`。
 - `delay_minutes`：当前环境配置的统一延迟分钟数，MVP 仅支持 `0` 或 `15`。
 - `is_realtime`：当 `delay_minutes == 0` 时为 `true`。
-- `data_source`：当前响应数据的来源，MVP 统一为 `database | massive_rest | massive_ws`。
-- `is_partial`：当前返回的数据范围是否不完整或被截断。
 
 ### 5.2 Watchlist 默认规则
 
@@ -109,7 +107,7 @@
 - 支持邮箱注册。
 - 支持邮箱 + 密码登录。
 - 登录成功后由 backend 签发 JWT token。
-- watchlist、market data、stream 等业务接口均为受保护接口。
+- watchlist、market data、以及可选更新接口均为受保护接口。
 
 ### F2：Watchlist
 
@@ -131,20 +129,21 @@
 - 支持 `timespan`、`multiplier`、`session`、`from`、`to`、`limit` 等查询参数。
 - bars 查询优先读取数据库；miss 时回源 Massive，成功后写入数据库。
 - 返回 `X-Data-Source` 与 `X-Partial-Range`，用于前端可视化数据来源与范围截断。
-- bars 的实时拼接、最终固化、以及与 WS 增量的精细协同逻辑不在本 PRD 细化，由单独 backend evolution 文档定义。
+- bars 的实时拼接、最终固化、以及与未来增量更新机制的精细协同逻辑不在本 PRD 细化，由单独 backend evolution 文档定义。
 
-### F5：Realtime Stream
+### F5：Incremental Update Delivery
 
-- 提供 `WS /api/v1/market-data/stream`，由 backend 对外提供统一流式协议。
-- Frontend 只消费 backend 定义的统一事件，不感知 Massive 原始事件类型。
-- 鉴权失败、超限、心跳超时需返回明确关闭语义。
-- 前端按状态机展示 `connected/reconnecting/degraded/disconnected`。
-- WS 异常时，backend 与 frontend 需支持明确的降级路径，使核心页面继续可读。
+- G2 不要求 WebSocket。
+- Backend 可根据实现复杂度与收益选择：
+  - 继续使用 snapshots REST + polling
+  - 或在后续阶段提供 SSE 作为单向增量更新通道
+- Frontend 只消费 backend 定义的统一数据更新语义，不感知 Massive 原始事件类型。
+- 当增量更新通道不可用时，frontend 必须能回退到 snapshots REST，保证核心页面继续可读。
 
 ## 7. 非功能需求
 
-- 安全：Massive API Key 不暴露到前端；WS 与受保护 REST API 必须鉴权。
-- 可用性：WS 异常时自动降级，核心页面仍可读。
+- 安全：Massive API Key 不暴露到前端；受保护 REST API 与可选更新通道必须鉴权。
+- 可用性：更新链路异常时自动降级，核心页面仍可读。
 - 性能：watchlist 批量快照请求支持最多 50 个 ticker。
 - 一致性：前端只依赖 backend 的统一字段口径和错误模型。
 - 可观测性：关键失败路径需要有统一错误码、日志或事件记录。
@@ -154,24 +153,24 @@
 ## 8. 验收标准（DoD）
 
 - [ ] 用户可完成邮箱注册与密码登录；登录成功后可拿到 JWT token。
-- [ ] 未登录访问 watchlist、market data、stream 等受保护接口时，返回统一鉴权错误。
+- [ ] 未登录访问 watchlist、market data、以及可选更新接口等受保护接口时，返回统一鉴权错误。
 - [ ] 用户可完成 watchlist 的增删查；同一用户下 ticker 去重、统一大写、刷新后仍持久化存在。
 - [ ] snapshots 接口可按最多 50 个 ticker 批量返回统一口径的股票快照，并在前端正确渲染。
 - [ ] snapshots 或能力配置接口可让前端感知当前 `delay_minutes` / realtime 模式。
 - [ ] bars 接口可按 ticker 与时间区间稳定返回历史数据；数据库 miss 时会回源 Massive 并写入数据库。
 - [ ] bars 接口返回的数据来源与部分区间状态可被前端感知。
-- [ ] WS 正常时页面有增量更新；WS 异常时前端自动降级且核心页面可继续读取。
+- [ ] 页面在 G2 阶段可通过 snapshots 持续刷新保持可读；若后续启用增量更新通道，该通道异常时前端可自动降级且核心页面可继续读取。
 - [ ] 前后端错误码与错误语义一致，关键失败路径可追踪。
 
 ## 9. 里程碑
 
 1. M1：Auth + Watchlist + snapshots 稳定可用。
 2. M2：bars 查询链路、数据库回源/回写与前端详情图表稳定可用。
-3. M3：WS 增量、降级与恢复闭环完成。
+3. M3：持续更新、降级与恢复闭环完成（实现方式可为 polling 或 SSE）。
 
 ## 10. 风险
 
 - Massive 上游限流、配额策略与实际延迟模式需要持续验证。
-- Massive WebSocket 的上游连接与订阅细节可能影响 backend stream 设计。
+- snapshots 刷新频率、共享拉取策略与 Massive 限流/配额之间需要持续验证。
 - 交易日、节假日、盘前盘后边界需要通过自动化测试守护。
 - bars 的缓存、固化、补齐与流式拼接策略复杂度较高，需要在单独 backend evolution 中提前收敛。

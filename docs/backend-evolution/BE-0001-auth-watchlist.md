@@ -1,6 +1,6 @@
 # BE-0001 — Auth + Watchlist Backend Evolution
 
-> 状态：DRAFT
+> 状态：Completed
 > 关联 PRD：`docs/prd/PRD-0001-market-watch.md`
 > 范围：覆盖账号体系、watchlist，以及为 watchlist 添加服务的 ticker search lookup；不包含 snapshot、bars、stream 的实现
 
