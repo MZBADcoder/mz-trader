@@ -7,9 +7,12 @@ from collections.abc import Iterator
 
 import docker
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from docker.errors import DockerException
+from redis import Redis
 from testcontainers.postgres import PostgresContainer
+from testcontainers.redis import RedisContainer
 
 from infrastructure.db.models import Base
 from infrastructure.db.session import DatabaseRuntime, create_database_runtime
@@ -70,6 +73,22 @@ def database_url(postgres_container: PostgresContainer) -> str:
 
 
 @pytest.fixture(scope="session")
+def redis_container() -> Iterator[RedisContainer]:
+    """Start a dedicated Redis container for integration tests."""
+    _ensure_docker_available()
+    with RedisContainer(image="redis:7-alpine") as container:
+        yield container
+
+
+@pytest.fixture(scope="session")
+def redis_url(redis_container: RedisContainer) -> str:
+    """Return a Redis URL for integration tests."""
+    host = redis_container.get_container_host_ip()
+    port = redis_container.get_exposed_port(6379)
+    return f"redis://{host}:{port}/0"
+
+
+@pytest.fixture(scope="session")
 def database_runtime(database_url: str) -> Iterator[DatabaseRuntime]:
     """Create a reusable engine and session factory for the test session."""
     runtime = create_database_runtime(database_url, use_null_pool=True)
@@ -78,8 +97,13 @@ def database_runtime(database_url: str) -> Iterator[DatabaseRuntime]:
 
 
 @pytest.fixture(scope="session")
-def integration_settings(database_url: str, tmp_path_factory: pytest.TempPathFactory) -> Settings:
+def integration_settings(
+    database_url: str,
+    redis_url: str,
+    tmp_path_factory: pytest.TempPathFactory,
+) -> Settings:
     """Build dedicated app settings for integration tests."""
+    base_settings = Settings()
     return Settings(
         app_env="test",
         app_secret_key="integration-test-secret",
@@ -87,6 +111,18 @@ def integration_settings(database_url: str, tmp_path_factory: pytest.TempPathFac
         password_hash_iterations=1_000,
         database_url=database_url,
         database_use_null_pool=True,
+        redis_url=redis_url,
+        celery_broker_url=redis_url,
+        celery_result_backend=redis_url,
+        massive_api_key=base_settings.massive_api_key,
+        massive_base_url=base_settings.massive_base_url,
+        massive_timeout_seconds=base_settings.massive_timeout_seconds,
+        market_data_delay_minutes=base_settings.market_data_delay_minutes,
+        market_data_supports_stream=base_settings.market_data_supports_stream,
+        market_data_snapshot_request_limit=base_settings.market_data_snapshot_request_limit,
+        market_data_snapshot_batch_size=base_settings.market_data_snapshot_batch_size,
+        market_data_snapshot_refresh_interval_seconds=base_settings.market_data_snapshot_refresh_interval_seconds,
+        market_data_snapshot_ttl_seconds=base_settings.market_data_snapshot_ttl_seconds,
         log_dir=tmp_path_factory.mktemp("integration-logs"),
         log_file_name="integration.log",
         log_to_stdout=False,
@@ -100,6 +136,21 @@ def reset_database_schema(database_runtime: DatabaseRuntime) -> Iterator[None]:
     yield
 
 
+@pytest.fixture(scope="session")
+def redis_client(redis_url: str) -> Iterator[Redis]:
+    """Expose a reusable Redis client to integration tests."""
+    client = Redis.from_url(redis_url, encoding="utf-8", decode_responses=True)
+    yield client
+    client.close()
+
+
+@pytest.fixture(autouse=True)
+def reset_redis(redis_client: Redis) -> Iterator[None]:
+    """Clear Redis state before each test to keep cases isolated."""
+    redis_client.flushdb()
+    yield
+
+
 @pytest.fixture
 def session_factory(database_runtime: DatabaseRuntime):
     """Expose the async session factory to integration tests."""
@@ -107,8 +158,19 @@ def session_factory(database_runtime: DatabaseRuntime):
 
 
 @pytest.fixture
-def client(integration_settings: Settings) -> Iterator[TestClient]:
+def app(integration_settings: Settings) -> FastAPI:
+    """Create a FastAPI app wired to the integration dependencies."""
+    return create_app(integration_settings)
+
+
+@pytest.fixture
+def client(app: FastAPI) -> Iterator[TestClient]:
     """Create a FastAPI test client wired to the real PostgreSQL database."""
-    app = create_app(integration_settings)
     with TestClient(app) as test_client:
         yield test_client
+
+
+@pytest.fixture
+def container(app: FastAPI):
+    """Expose the real application container used by integration tests."""
+    return app.state.container
