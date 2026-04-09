@@ -28,6 +28,15 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/trader_refactor"
     database_use_null_pool: bool = False
     redis_url: str = "redis://localhost:6379/0"
+    celery_broker_url: str = "redis://localhost:6379/1"
+    celery_result_backend: str | None = None
+
+    market_data_delay_minutes: int = 15
+    market_data_supports_stream: bool = False
+    market_data_snapshot_request_limit: int = 50
+    market_data_snapshot_batch_size: int = 100
+    market_data_snapshot_refresh_interval_seconds: int | None = None
+    market_data_snapshot_ttl_seconds: int | None = None
 
     log_level: str = "INFO"
     log_dir: Path = Field(default=Path("var/log"))
@@ -46,6 +55,25 @@ class Settings(BaseSettings):
     def app_log_path(self) -> Path:
         """Resolve the configured application log file path."""
         return self.log_dir / self.log_file_name
+
+    @property
+    def resolved_market_data_snapshot_refresh_interval_seconds(self) -> int:
+        """Return the effective snapshot refresh interval."""
+        if self.market_data_snapshot_refresh_interval_seconds is not None:
+            return self.market_data_snapshot_refresh_interval_seconds
+        return 3 if self.market_data_delay_minutes == 0 else 10
+
+    @property
+    def resolved_market_data_snapshot_ttl_seconds(self) -> int:
+        """Return the effective Redis TTL for snapshots."""
+        if self.market_data_snapshot_ttl_seconds is not None:
+            return self.market_data_snapshot_ttl_seconds
+        return self.resolved_market_data_snapshot_refresh_interval_seconds * 5
+
+    @property
+    def resolved_celery_result_backend(self) -> str:
+        """Return the configured Celery result backend."""
+        return self.celery_result_backend or self.celery_broker_url
 
 
 @lru_cache(maxsize=1)

@@ -15,6 +15,7 @@ dependencies = [
   "greenlet",
   "asyncpg",
   "alembic",
+  "celery",
   "redis",
   "httpx",
   "massive>=2.2,<3",

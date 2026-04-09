@@ -51,6 +51,12 @@ class WatchlistRepository:
         count = await self._session.scalar(stmt)
         return int(count or 0)
 
+    async def list_distinct_tickers(self) -> list[str]:
+        """Return all distinct watchlist tickers across users."""
+        stmt = select(WatchlistItemModel.ticker).distinct().order_by(WatchlistItemModel.ticker.asc())
+        result = await self._session.scalars(stmt)
+        return [ticker for ticker in result.all() if isinstance(ticker, str)]
+
     async def lock_owner(self, user_id: str) -> None:
         """Serialize watchlist mutations per user."""
         stmt = select(UserModel.id).where(UserModel.id == uuid.UUID(user_id)).with_for_update()

@@ -7,13 +7,16 @@ from fastapi import Depends, Header, Request
 from application.container import Container
 from application.services import (
     AddWatchlistItemService,
+    GetBatchSnapshotsService,
     GetCurrentUserService,
+    GetMarketDataCapabilitiesService,
     GetWatchlistService,
     LoginUserService,
     RegisterUserService,
     SearchTickersService,
     DeleteWatchlistItemService,
 )
+from bootstrap.request_context import bind_request_context
 from domain.entities import User
 from domain.exceptions import AuthenticationRequiredError, AuthTokenInvalidError
 
@@ -53,6 +56,16 @@ def get_search_tickers_service(container: Container = Depends(get_container)) ->
     return container.get_search_tickers_service()
 
 
+def get_market_data_capabilities_service(
+    container: Container = Depends(get_container),
+) -> GetMarketDataCapabilitiesService:
+    return container.get_market_data_capabilities_service()
+
+
+def get_batch_snapshots_service(container: Container = Depends(get_container)) -> GetBatchSnapshotsService:
+    return container.get_batch_snapshots_service()
+
+
 def _extract_bearer_token(authorization: str | None) -> str:
     if authorization is None:
         raise AuthenticationRequiredError()
@@ -69,4 +82,6 @@ async def get_current_user(
 ) -> User:
     """Resolve the authenticated user from the bearer token."""
     token = _extract_bearer_token(authorization)
-    return await service.execute(token=token)
+    user = await service.execute(token=token)
+    bind_request_context(user_id=user.id)
+    return user

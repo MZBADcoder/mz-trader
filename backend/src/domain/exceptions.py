@@ -104,6 +104,30 @@ class WatchlistLimitExceededError(AppError):
     status_code = 409
 
 
+class MarketDataTickerInvalidError(AppError):
+    """Market data ticker format is invalid."""
+
+    code = "MARKET_DATA_TICKER_INVALID"
+    message = "Ticker format is invalid."
+    status_code = 422
+
+
+class MarketDataTickerLimitExceededError(AppError):
+    """Snapshot request exceeds the supported ticker count."""
+
+    code = "MARKET_DATA_TICKER_LIMIT_EXCEEDED"
+    message = "Ticker limit exceeded."
+    status_code = 409
+
+
+class MarketSnapshotUpstreamUnavailableError(AppError):
+    """Upstream market data provider is unavailable."""
+
+    code = "MARKET_SNAPSHOT_UPSTREAM_UNAVAILABLE"
+    message = "Market snapshot provider is unavailable."
+    status_code = 503
+
+
 class InternalError(AppError):
     """Internal service failure with a stable outward-facing payload."""
 

@@ -311,11 +311,12 @@ backend 可以额外维护但不对 frontend 暴露：
 关键说明：
 
 - 这是后台定时刷新链路，不直接处理 frontend 请求
+- worker 调度实现先统一走 `Celery`
 - 刷新频率按当前 market data mode 分档：
   - `delay_minutes == 0` 时，默认 `3s`
   - `delay_minutes == 15` 时，默认 `10s`
 - Massive 支持多 ticker 批量 snapshot，因此 coordinator 应优先使用批量接口
-- Massive 官方 `Full Market Snapshot` 文档说明 `tickers` 参数支持逗号分隔列表，留空时可查询全市场；但官方文档未明确给出单次请求的 ticker 上限，因此 batch chunk size 需要在实现阶段通过实测收敛
+- Massive 官方 `Full Market Snapshot` 文档说明 `tickers` 参数支持逗号分隔列表，留空时可查询全市场；当前实现先将单次 batch chunk size 固定为 `100`
 
 ### 10.2 Redis Snapshot Store
 
@@ -552,7 +553,7 @@ Redis snapshot
   - `user_id`
   - `request_id`
   - `upstream_latency_ms`
-- 若本次响应构成 `partial_response`，打印 `WARN` 日志
+- 若本次响应构成 `partial_response`，打印 `WARN` 日志，并记录缺失或异常 ticker
 - coordinator 侧记录基础事件日志：
   - distinct ticker count
   - batch refresh start / success / failure
@@ -574,7 +575,9 @@ Redis snapshot
 - coordinator 刷新频率按当前 mode 分档：
   - `delay_minutes == 0` 时，默认 `3s`
   - `delay_minutes == 15` 时，默认 `10s`
+- coordinator 调度实现当前走 `Celery Beat`
 - Redis TTL 默认设置为刷新周期的 `5` 倍：
   - `delay_minutes == 0` 时，默认 `15s`
   - `delay_minutes == 15` 时，默认 `50s`
-- Massive batch snapshot 的 chunk size 暂不写死；官方文档确认支持逗号分隔的 `tickers` 参数，但未明确公开单次请求上限，因此需要在实现阶段通过实测确定
+- Massive batch snapshot 的 chunk size 当前固定为 `100`
+- partial response 当前不对 frontend 外显，只写 `WARN` 日志并打印缺失或异常 ticker
