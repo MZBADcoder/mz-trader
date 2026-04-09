@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from math import ceil
 from pathlib import Path
 
 from pydantic import Field
@@ -69,6 +70,11 @@ class Settings(BaseSettings):
         if self.market_data_snapshot_ttl_seconds is not None:
             return self.market_data_snapshot_ttl_seconds
         return self.resolved_market_data_snapshot_refresh_interval_seconds * 5
+
+    @property
+    def resolved_market_data_snapshot_refresh_lock_ttl_seconds(self) -> int:
+        """Return the Redis lock TTL for coordinator refresh single-flight."""
+        return ceil(self.resolved_market_data_snapshot_refresh_interval_seconds * 2.5)
 
     @property
     def resolved_celery_result_backend(self) -> str:

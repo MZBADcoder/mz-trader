@@ -102,6 +102,7 @@ class Container:
             snapshot_client=self._snapshot_client,
             mode=self._market_data_mode,
             batch_size=settings.market_data_snapshot_batch_size,
+            refresh_lock_ttl_seconds=settings.resolved_market_data_snapshot_refresh_lock_ttl_seconds,
         )
 
     def get_register_user_service(self) -> RegisterUserService:

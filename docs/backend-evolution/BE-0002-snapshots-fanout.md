@@ -315,6 +315,8 @@ backend 可以额外维护但不对 frontend 暴露：
 - 刷新频率按当前 market data mode 分档：
   - `delay_minutes == 0` 时，默认 `3s`
   - `delay_minutes == 15` 时，默认 `10s`
+- coordinator 通过 Redis 分布式锁避免重叠刷新
+- 锁 TTL 默认取 refresh interval 的 `2.5x`
 - Massive 支持多 ticker 批量 snapshot，因此 coordinator 应优先使用批量接口
 - Massive 官方 `Full Market Snapshot` 文档说明 `tickers` 参数支持逗号分隔列表，留空时可查询全市场；当前实现先将单次 batch chunk size 固定为 `100`
 
@@ -352,6 +354,7 @@ backend 可以额外维护但不对 frontend 暴露：
 - fallback 是已有 snapshots API 的内部行为
 - 不新增单独的 frontend fallback endpoint
 - fallback 返回的仍然是项目统一 snapshot schema，而不是 Massive 原始响应
+- `change` / `change_pct` 等关键展示字段只使用 Massive 明确返回的值，不在 backend 本地补算
 - 该路径属于 `GetBatchSnapshots` use case 的内部执行步骤，不单独作为 API-facing use case 暴露
 
 ## 11. Redis 设计建议

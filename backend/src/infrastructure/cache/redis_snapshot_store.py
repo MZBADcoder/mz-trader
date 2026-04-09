@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from datetime import UTC, datetime
 
 from redis.asyncio import Redis
@@ -13,6 +14,8 @@ from domain.exceptions import InternalError
 
 class RedisSnapshotStore:
     """Persist normalized snapshots in Redis."""
+
+    _SNAPSHOT_COORDINATOR_LOCK_KEY = "snapshot:coordinator:refresh_lock"
 
     def __init__(self, redis: Redis, *, ttl_seconds: int) -> None:
         self._redis = redis
@@ -44,6 +47,34 @@ class RedisSnapshotStore:
                     ex=self._ttl_seconds,
                 )
             await pipeline.execute()
+
+    async def acquire_refresh_lock(self, *, ttl_seconds: int) -> str | None:
+        """Acquire the snapshot coordinator lock when no refresh is active."""
+        token = uuid.uuid4().hex
+        acquired = await self._redis.set(
+            self._SNAPSHOT_COORDINATOR_LOCK_KEY,
+            token,
+            ex=ttl_seconds,
+            nx=True,
+        )
+        if not acquired:
+            return None
+        return token
+
+    async def release_refresh_lock(self, token: str) -> bool:
+        """Release the snapshot coordinator lock when owned by this worker."""
+        released = await self._redis.eval(
+            """
+            if redis.call('get', KEYS[1]) == ARGV[1] then
+                return redis.call('del', KEYS[1])
+            end
+            return 0
+            """,
+            1,
+            self._SNAPSHOT_COORDINATOR_LOCK_KEY,
+            token,
+        )
+        return bool(released)
 
     def _build_key(self, ticker: str) -> str:
         return f"snapshot:{ticker}"

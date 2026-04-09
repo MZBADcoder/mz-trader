@@ -61,6 +61,8 @@ class BatchSnapshotsResult:
 class SnapshotCoordinatorRefreshResult:
     """Summary of one coordinator refresh run."""
 
+    status: str
     total_tickers: int
     refreshed_tickers: int
     failed_tickers: list[str]
+    skip_reason: str | None = None

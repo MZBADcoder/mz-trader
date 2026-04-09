@@ -29,11 +29,15 @@ async def _run_snapshot_coordinator_refresh() -> dict[str, Any]:
         await container.shutdown()
 
     payload = {
+        "status": result.status,
         "total_tickers": result.total_tickers,
         "refreshed_tickers": result.refreshed_tickers,
         "failed_tickers": result.failed_tickers,
+        "skip_reason": result.skip_reason,
     }
-    if result.failed_tickers:
+    if result.status == "skipped":
+        logger.info("snapshot coordinator refresh skipped", extra=payload)
+    elif result.failed_tickers:
         logger.warning("snapshot coordinator refresh completed with failures", extra=payload)
     else:
         logger.info("snapshot coordinator refresh completed", extra=payload)

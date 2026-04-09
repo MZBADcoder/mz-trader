@@ -140,12 +140,8 @@ class MassiveSnapshotClient:
         )
 
         change = self._read_float(item, "todaysChange", "change")
-        if change is None and last is not None and prev_close is not None:
-            change = last - prev_close
 
         change_pct = self._read_float(item, "todaysChangePerc", "todaysChangePercent", "change_pct")
-        if change_pct is None and change is not None and prev_close not in (None, 0):
-            change_pct = change / prev_close
 
         updated_at = self._read_timestamp(
             item,
