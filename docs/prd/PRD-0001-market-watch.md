@@ -89,6 +89,7 @@
 - `market_status`：市场状态，MVP 统一为 `pre_market | regular | after_hours | closed`。
 - `delay_minutes`：当前环境配置的统一延迟分钟数，MVP 仅支持 `0` 或 `15`。
 - `is_realtime`：当 `delay_minutes == 0` 时为 `true`。
+- `provider_updated_at`：上游行情提供方返回的该条 snapshot 数据时间，不表示 backend 缓存写入时间。
 
 ### 5.2 Watchlist 默认规则
 

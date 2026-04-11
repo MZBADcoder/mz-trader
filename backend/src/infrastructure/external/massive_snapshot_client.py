@@ -143,7 +143,7 @@ class MassiveSnapshotClient:
 
         change_pct = self._read_float(item, "todaysChangePerc", "todaysChangePercent", "change_pct")
 
-        updated_at = self._read_timestamp(
+        provider_updated_at = self._read_timestamp(
             item,
             "updated",
             "updated_at",
@@ -155,7 +155,7 @@ class MassiveSnapshotClient:
             or "closed"
         )
 
-        if None in (last, change, change_pct, open_price, high, low, volume, prev_close, updated_at):
+        if None in (last, change, change_pct, open_price, high, low, volume, prev_close, provider_updated_at):
             return None
 
         return Snapshot(
@@ -171,7 +171,7 @@ class MassiveSnapshotClient:
             market_status=market_status,
             delay_minutes=mode.delay_minutes,
             is_realtime=mode.is_realtime,
-            updated_at=updated_at,
+            provider_updated_at=provider_updated_at,
             fetched_at=datetime.now(UTC),
             data_source=data_source,
         )

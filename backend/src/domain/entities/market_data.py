@@ -43,7 +43,7 @@ class Snapshot:
     market_status: str
     delay_minutes: int
     is_realtime: bool
-    updated_at: datetime
+    provider_updated_at: datetime
     fetched_at: datetime
     data_source: str
 

@@ -44,7 +44,7 @@ def _seed_snapshot(redis_client, snapshot: Snapshot) -> None:
                 "market_status": snapshot.market_status,
                 "delay_minutes": snapshot.delay_minutes,
                 "is_realtime": snapshot.is_realtime,
-                "updated_at": snapshot.updated_at.astimezone(UTC).isoformat(),
+                "provider_updated_at": snapshot.provider_updated_at.astimezone(UTC).isoformat(),
                 "fetched_at": snapshot.fetched_at.astimezone(UTC).isoformat(),
                 "data_source": snapshot.data_source,
             },
@@ -69,7 +69,7 @@ def _snapshot(ticker: str) -> Snapshot:
         market_status="regular",
         delay_minutes=15,
         is_realtime=False,
-        updated_at=datetime(2026, 4, 8, 8, 30, tzinfo=UTC),
+        provider_updated_at=datetime(2026, 4, 8, 8, 30, tzinfo=UTC),
         fetched_at=datetime(2026, 4, 8, 8, 31, tzinfo=UTC),
         data_source="redis",
     )
@@ -139,7 +139,7 @@ def test_market_data_snapshots_returns_cached_snapshot_on_redis_hit(client, redi
     payload = response.json()
     assert [item["ticker"] for item in payload["items"]] == ["CACHEONLY"]
     assert payload["items"][0]["last"] == 212.34
-    assert payload["items"][0]["updated_at"] == "2026-04-08T08:30:00Z"
+    assert payload["items"][0]["provider_updated_at"] == "2026-04-08T08:30:00Z"
     assert payload["meta"] == {
         "delay_minutes": 15,
         "is_realtime": False,

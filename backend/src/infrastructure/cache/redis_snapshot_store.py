@@ -93,7 +93,7 @@ class RedisSnapshotStore:
             "market_status": snapshot.market_status,
             "delay_minutes": snapshot.delay_minutes,
             "is_realtime": snapshot.is_realtime,
-            "updated_at": snapshot.updated_at.astimezone(UTC).isoformat(),
+            "provider_updated_at": snapshot.provider_updated_at.astimezone(UTC).isoformat(),
             "fetched_at": snapshot.fetched_at.astimezone(UTC).isoformat(),
             "data_source": snapshot.data_source,
         }
@@ -122,7 +122,7 @@ class RedisSnapshotStore:
                 market_status=str(payload["market_status"]),
                 delay_minutes=int(payload["delay_minutes"]),
                 is_realtime=bool(payload["is_realtime"]),
-                updated_at=self._parse_datetime(payload["updated_at"]),
+                provider_updated_at=self._parse_datetime(payload["provider_updated_at"]),
                 fetched_at=self._parse_datetime(payload["fetched_at"]),
                 data_source=str(payload.get("data_source", "redis")),
             )

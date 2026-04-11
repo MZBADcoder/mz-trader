@@ -62,7 +62,7 @@ def test_massive_snapshot_client_maps_complete_snapshot_payload() -> None:
     assert snapshot.market_status == "regular"
     assert snapshot.delay_minutes == 15
     assert snapshot.is_realtime is False
-    assert snapshot.updated_at == datetime(2026, 4, 8, 8, 30, tzinfo=UTC)
+    assert snapshot.provider_updated_at == datetime(2026, 4, 8, 8, 30, tzinfo=UTC)
 
 
 def test_massive_snapshot_client_marks_missing_change_as_unresolved() -> None:

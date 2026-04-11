@@ -88,7 +88,7 @@
       +----------------------+                      |
       |        Redis         |----------------------+
       | snapshot:{ticker}    |
-      | updated_at / ttl     |
+      | provider_updated_at / ttl |
       +----------+-----------+
                  ^
                  |
@@ -189,7 +189,7 @@ watchlist_items
 - `market_status`
 - `delay_minutes`
 - `is_realtime`
-- `updated_at`
+- `provider_updated_at`
 
 ### 8.2 backend 内部元数据
 
@@ -271,7 +271,7 @@ backend 可以额外维护但不对 frontend 暴露：
       "market_status": "regular",
       "delay_minutes": 15,
       "is_realtime": false,
-      "updated_at": "2026-04-08T08:30:00Z"
+      "provider_updated_at": "2026-04-08T08:30:00Z"
     }
   ],
   "meta": {
@@ -380,7 +380,7 @@ backend 可以额外维护但不对 frontend 暴露：
 - `market_status`
 - `delay_minutes`
 - `is_realtime`
-- `updated_at`
+- `provider_updated_at`
 - `fetched_at`
 
 ### 11.3 TTL 方向
@@ -388,7 +388,7 @@ backend 可以额外维护但不对 frontend 暴露：
 建议：
 
 - Redis key 设置 TTL
-- 同时在 value 中保存 `updated_at` / `fetched_at`
+- 同时在 value 中保存 `provider_updated_at` / `fetched_at`
 - TTL 默认设置为当前刷新周期的 `5` 倍
   - `delay_minutes == 0` 时，默认 TTL `15s`
   - `delay_minutes == 15` 时，默认 TTL `50s`
@@ -396,7 +396,7 @@ backend 可以额外维护但不对 frontend 暴露：
 原因：
 
 - TTL 适合清理陈旧 key
-- `updated_at` 适合对 frontend 返回明确新鲜度信息
+- `provider_updated_at` 适合对 frontend 返回明确新鲜度信息
 - key 过期后通常会表现为 Redis miss；Redis miss 时应重新回源 Massive
 
 ## 12. 冷启动、fallback 与 stale
@@ -436,12 +436,12 @@ Redis snapshot
 建议：
 
 - stale 判断由 backend 负责
-- Redis hit 后，snapshot freshness 通过 `updated_at` / `fetched_at` 判定
+- Redis hit 后，snapshot freshness 通过 `provider_updated_at` / `fetched_at` 判定
 - snapshot age 超过当前刷新周期时，可视为 stale-but-usable
 - Redis miss 时，统一触发 Massive fallback；不要把 TTL 直接等同于业务 stale 判定
 - frontend 首版只依赖：
   - `delay_minutes`
-  - `updated_at`
+  - `provider_updated_at`
 
 ## 13. DDD 分层落点
 

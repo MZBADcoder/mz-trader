@@ -38,7 +38,7 @@ class SnapshotItemResponse(BaseModel):
     market_status: str
     delay_minutes: int
     is_realtime: bool
-    updated_at: datetime
+    provider_updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -56,4 +56,3 @@ class SnapshotsResponse(BaseModel):
 
     items: list[SnapshotItemResponse]
     meta: SnapshotsMetaResponse
-

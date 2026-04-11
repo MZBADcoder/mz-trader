@@ -24,7 +24,7 @@ def _snapshot(ticker: str) -> Snapshot:
         market_status="regular",
         delay_minutes=15,
         is_realtime=False,
-        updated_at=datetime(2026, 4, 8, 8, 30, tzinfo=UTC),
+        provider_updated_at=datetime(2026, 4, 8, 8, 30, tzinfo=UTC),
         fetched_at=datetime(2026, 4, 8, 8, 31, tzinfo=UTC),
         data_source="massive_fallback",
     )
@@ -89,6 +89,7 @@ def test_redis_snapshot_store_round_trips_snapshot_payload() -> None:
     assert result["AAPL"] == _snapshot("AAPL")
     assert redis.expirations["snapshot:AAPL"] == 50
     payload = json.loads(redis.values["snapshot:AAPL"])
+    assert payload["provider_updated_at"] == "2026-04-08T08:30:00+00:00"
     assert payload["fetched_at"] == "2026-04-08T08:31:00+00:00"
 
 

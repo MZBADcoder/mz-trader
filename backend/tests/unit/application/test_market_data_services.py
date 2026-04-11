@@ -27,7 +27,7 @@ def _snapshot(ticker: str, *, data_source: str = "redis") -> Snapshot:
         market_status="regular",
         delay_minutes=15,
         is_realtime=False,
-        updated_at=datetime(2026, 4, 8, 8, 30, tzinfo=UTC),
+        provider_updated_at=datetime(2026, 4, 8, 8, 30, tzinfo=UTC),
         fetched_at=datetime(2026, 4, 8, 8, 31, tzinfo=UTC),
         data_source=data_source,
     )
