@@ -107,7 +107,9 @@ API / Worker -> Application -> Infrastructure -> Domain
 - Boundary checks matter in this repository. Keep `scripts/check_boundaries.py` passing.
 - Run backend commands through `poetry run` when working inside this package.
 - Typical verification commands:
+  - `poetry run python scripts/verify.py`
   - `poetry run python scripts/check_boundaries.py`
+  - `poetry run pyright`
   - `poetry run pytest`
 - If you add a new layer crossing, stop and justify it before implementing.
 
@@ -119,3 +121,12 @@ API / Worker -> Application -> Infrastructure -> Domain
 - Prefer mapper functions over leaking ORM objects upward.
 - Keep settings loading centralized.
 - Avoid convenience imports that obscure layer boundaries.
+
+## Type Safety Expectations
+
+- Treat `expected X, got X | None` warnings as actionable by default when values cross a backend boundary such as external payload mapping, Redis/DB serialization, domain entity construction, or API response shaping.
+- Keep `poetry run pyright` in the normal backend verification flow. Do not treat type checking as an optional follow-up when backend Python files changed.
+- Prefer narrowing `None` explicitly with guard clauses before constructing domain entities or response DTOs. Do not rely on tuple membership checks like `if None in (...)` when the checker cannot narrow types afterward.
+- When a value is logically guaranteed after a guard, prefer `assert value is not None` or a small refactor that preserves runtime safety before using `cast`.
+- Use `cast(...)` only for framework or third-party typing gaps where runtime behavior is already correct, such as FastAPI exception handler registration or Redis client stubs.
+- Avoid broad `# type: ignore` comments unless there is no narrower safe alternative, and document the reason inline when one is necessary.

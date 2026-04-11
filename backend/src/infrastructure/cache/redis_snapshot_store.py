@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import uuid
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
+from typing import Any, cast
 
 from redis.asyncio import Redis
 
@@ -63,7 +65,8 @@ class RedisSnapshotStore:
 
     async def release_refresh_lock(self, token: str) -> bool:
         """Release the snapshot coordinator lock when owned by this worker."""
-        released = await self._redis.eval(
+        redis_eval = cast(Callable[..., Awaitable[Any]], self._redis.eval)
+        released = await redis_eval(
             """
             if redis.call('get', KEYS[1]) == ARGV[1] then
                 return redis.call('del', KEYS[1])

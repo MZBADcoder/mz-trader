@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from typing import Any, cast
 
 from sqlalchemy import delete, func, select
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -85,5 +87,5 @@ class WatchlistRepository:
             WatchlistItemModel.user_id == uuid.UUID(user_id),
             WatchlistItemModel.ticker == ticker,
         )
-        result = await self._session.execute(stmt)
-        return bool(result.rowcount)
+        result = cast(CursorResult[Any], await self._session.execute(stmt))
+        return (result.rowcount or 0) > 0

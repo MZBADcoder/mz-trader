@@ -35,7 +35,9 @@ class RequestContextMiddleware:
 
         headers = Headers(scope=scope)
         client_request_id = headers.get(self.request_id_header)
-        request_id = client_request_id if is_valid_request_id(client_request_id) else generate_request_id()
+        request_id = generate_request_id()
+        if client_request_id is not None and is_valid_request_id(client_request_id):
+            request_id = client_request_id
 
         token = set_request_context(
             RequestLogContext(

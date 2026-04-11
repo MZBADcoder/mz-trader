@@ -24,6 +24,21 @@ class MassiveSnapshotBatchResponse:
     unresolved_tickers: list[str]
 
 
+@dataclass(slots=True)
+class ValidatedSnapshotPayload:
+    """Required snapshot fields after nullability checks."""
+
+    last: float
+    change: float
+    change_pct: float
+    open_price: float
+    high: float
+    low: float
+    volume: int
+    prev_close: float
+    provider_updated_at: datetime
+
+
 class MassiveSnapshotClient:
     """Thin async client for Massive stock snapshot endpoints."""
 
@@ -154,26 +169,81 @@ class MassiveSnapshotClient:
             or self._read_str(session, "market_status", "marketStatus")
             or "closed"
         )
-
-        if None in (last, change, change_pct, open_price, high, low, volume, prev_close, provider_updated_at):
-            return None
-
-        return Snapshot(
-            ticker=ticker,
+        validated = self._validate_snapshot_payload(
             last=last,
             change=change,
             change_pct=change_pct,
-            open=open_price,
+            open_price=open_price,
             high=high,
             low=low,
             volume=volume,
             prev_close=prev_close,
+            provider_updated_at=provider_updated_at,
+        )
+        if validated is None:
+            return None
+
+        return Snapshot(
+            ticker=ticker,
+            last=validated.last,
+            change=validated.change,
+            change_pct=validated.change_pct,
+            open=validated.open_price,
+            high=validated.high,
+            low=validated.low,
+            volume=validated.volume,
+            prev_close=validated.prev_close,
             market_status=market_status,
             delay_minutes=mode.delay_minutes,
             is_realtime=mode.is_realtime,
-            provider_updated_at=provider_updated_at,
+            provider_updated_at=validated.provider_updated_at,
             fetched_at=datetime.now(UTC),
             data_source=data_source,
+        )
+
+    def _validate_snapshot_payload(
+        self,
+        *,
+        last: float | None,
+        change: float | None,
+        change_pct: float | None,
+        open_price: float | None,
+        high: float | None,
+        low: float | None,
+        volume: int | None,
+        prev_close: float | None,
+        provider_updated_at: datetime | None,
+    ) -> ValidatedSnapshotPayload | None:
+        """Return required fields only when the upstream snapshot is complete."""
+        if last is None:
+            return None
+        if change is None:
+            return None
+        if change_pct is None:
+            return None
+        if open_price is None:
+            return None
+        if high is None:
+            return None
+        if low is None:
+            return None
+        if volume is None:
+            return None
+        if prev_close is None:
+            return None
+        if provider_updated_at is None:
+            return None
+
+        return ValidatedSnapshotPayload(
+            last=last,
+            change=change,
+            change_pct=change_pct,
+            open_price=open_price,
+            high=high,
+            low=low,
+            volume=volume,
+            prev_close=prev_close,
+            provider_updated_at=provider_updated_at,
         )
 
     def _read_dict(self, payload: dict[str, Any], *keys: str) -> dict[str, Any]:
@@ -251,10 +321,9 @@ class MassiveSnapshotClient:
                 return parsed.replace(tzinfo=UTC)
             return parsed.astimezone(UTC)
 
-        try:
-            numeric_value = float(value)
-        except (TypeError, ValueError):
+        if not isinstance(value, int | float):
             return None
+        numeric_value = float(value)
 
         absolute_value = abs(numeric_value)
         if absolute_value >= 1_000_000_000_000_000_000:

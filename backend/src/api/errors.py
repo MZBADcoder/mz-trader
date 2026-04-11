@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any, cast
 
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
@@ -77,6 +78,8 @@ async def internal_error_handler(_: Request, exc: Exception) -> JSONResponse:
 
 def register_exception_handlers(app: FastAPI) -> None:
     """Register API-level exception handlers."""
-    app.add_exception_handler(AppError, app_error_handler)
-    app.add_exception_handler(RequestValidationError, validation_error_handler)
+    # FastAPI dispatches by registered exception type, but its public handler
+    # annotation is wider than these specific business handlers.
+    app.add_exception_handler(AppError, cast(Any, app_error_handler))
+    app.add_exception_handler(RequestValidationError, cast(Any, validation_error_handler))
     app.add_exception_handler(Exception, internal_error_handler)
