@@ -5,8 +5,13 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 from typing import Callable
 
+from application.services.market_data._bars_maintenance_support import clamp_state_to_retention
 from domain.entities import BarsMaintenanceResult, MarketDataMode
-from domain.rules import MARKET_BARS_1D_RETENTION_YEARS, MARKET_BARS_1M_RETENTION_TRADING_DAYS
+from domain.rules import (
+    MARKET_BARS_1D_RETENTION_YEARS,
+    MARKET_BARS_1M_RETENTION_TRADING_DAYS,
+    TICKER_BARS_READINESS_STATES,
+)
 from infrastructure.calendar import UsStockCalendar
 from infrastructure.db.uow import SqlAlchemyUnitOfWorkFactory
 
@@ -39,6 +44,18 @@ class RunBarsRetentionCleanupService:
         async with self._uow_factory.build() as uow:
             deleted_1m_rows = await uow.bars.delete_1m_before(threshold_day=minute_threshold_day)
             deleted_1d_rows = await uow.bars.delete_1d_before(threshold_day=daily_threshold_day)
+            states = await uow.ticker_bars_state.list_by_statuses(
+                statuses=sorted(TICKER_BARS_READINESS_STATES)
+            )
+            for state in states:
+                await uow.ticker_bars_state.upsert(
+                    clamp_state_to_retention(
+                        state=state,
+                        minute_threshold_day=minute_threshold_day,
+                        daily_threshold_day=daily_threshold_day,
+                        now=effective_now,
+                    )
+                )
             await uow.commit()
 
         return BarsMaintenanceResult(

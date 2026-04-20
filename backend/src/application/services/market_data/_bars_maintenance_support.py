@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 
 from domain.entities import CanonicalBar, ProviderBar, TickerBarsState
@@ -91,11 +92,26 @@ def build_ready_state(
     daily_rows: list[CanonicalBar],
     existing: TickerBarsState | None,
 ) -> TickerBarsState:
-    earliest_1m = minute_rows[0].trading_day if minute_rows else (existing.earliest_1m_trading_day if existing else None)
-    last_1m = minute_rows[-1].trading_day if minute_rows else (existing.last_1m_trading_day if existing else None)
-    last_1m_bucket = minute_rows[-1].bucket_start_at if minute_rows else (existing.last_1m_bucket_start_at if existing else None)
-    earliest_1d = daily_rows[0].trading_day if daily_rows else (existing.earliest_1d_trading_day if existing else None)
-    latest_1d = daily_rows[-1].trading_day if daily_rows else (existing.latest_1d_trading_day if existing else None)
+    earliest_1m = _min_optional_date(
+        minute_rows[0].trading_day if minute_rows else None,
+        existing.earliest_1m_trading_day if existing else None,
+    )
+    last_1m = _max_optional_date(
+        minute_rows[-1].trading_day if minute_rows else None,
+        existing.last_1m_trading_day if existing else None,
+    )
+    last_1m_bucket = _max_optional_datetime(
+        minute_rows[-1].bucket_start_at if minute_rows else None,
+        existing.last_1m_bucket_start_at if existing else None,
+    )
+    earliest_1d = _min_optional_date(
+        daily_rows[0].trading_day if daily_rows else None,
+        existing.earliest_1d_trading_day if existing else None,
+    )
+    latest_1d = _max_optional_date(
+        daily_rows[-1].trading_day if daily_rows else None,
+        existing.latest_1d_trading_day if existing else None,
+    )
     created_at = existing.created_at if existing is not None else now
     bootstrap_requested_at = existing.bootstrap_requested_at if existing is not None else now
     bootstrap_started_at = existing.bootstrap_started_at if existing is not None else now
@@ -115,6 +131,42 @@ def build_ready_state(
         last_error_code=None,
         last_error_message=None,
         created_at=created_at,
+        updated_at=now,
+    )
+
+
+def clamp_state_to_retention(
+    *,
+    state: TickerBarsState,
+    minute_threshold_day: date,
+    daily_threshold_day: date,
+    now: datetime,
+) -> TickerBarsState:
+    earliest_1m = state.earliest_1m_trading_day
+    last_1m = state.last_1m_trading_day
+    last_1m_bucket = state.last_1m_bucket_start_at
+    if last_1m is not None and last_1m < minute_threshold_day:
+        earliest_1m = None
+        last_1m = None
+        last_1m_bucket = None
+    elif earliest_1m is not None and earliest_1m < minute_threshold_day:
+        earliest_1m = minute_threshold_day
+
+    earliest_1d = state.earliest_1d_trading_day
+    latest_1d = state.latest_1d_trading_day
+    if latest_1d is not None and latest_1d < daily_threshold_day:
+        earliest_1d = None
+        latest_1d = None
+    elif earliest_1d is not None and earliest_1d < daily_threshold_day:
+        earliest_1d = daily_threshold_day
+
+    return replace(
+        state,
+        earliest_1m_trading_day=earliest_1m,
+        last_1m_trading_day=last_1m,
+        last_1m_bucket_start_at=last_1m_bucket,
+        earliest_1d_trading_day=earliest_1d,
+        latest_1d_trading_day=latest_1d,
         updated_at=now,
     )
 
@@ -146,3 +198,27 @@ def utc_now(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC)
     return value.astimezone(UTC)
+
+
+def _min_optional_date(left: date | None, right: date | None) -> date | None:
+    if left is None:
+        return right
+    if right is None:
+        return left
+    return min(left, right)
+
+
+def _max_optional_date(left: date | None, right: date | None) -> date | None:
+    if left is None:
+        return right
+    if right is None:
+        return left
+    return max(left, right)
+
+
+def _max_optional_datetime(left: datetime | None, right: datetime | None) -> datetime | None:
+    if left is None:
+        return right
+    if right is None:
+        return left
+    return max(left, right)
