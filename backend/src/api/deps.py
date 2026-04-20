@@ -8,6 +8,7 @@ from application.container import Container
 from application.services import (
     AddWatchlistItemService,
     GetBatchSnapshotsService,
+    GetBarsService,
     GetCurrentUserService,
     GetMarketDataCapabilitiesService,
     GetWatchlistService,
@@ -64,6 +65,10 @@ def get_market_data_capabilities_service(
 
 def get_batch_snapshots_service(container: Container = Depends(get_container)) -> GetBatchSnapshotsService:
     return container.get_batch_snapshots_service()
+
+
+def get_bars_service(container: Container = Depends(get_container)) -> GetBarsService:
+    return container.get_bars_service()
 
 
 def _extract_bearer_token(authorization: str | None) -> str:

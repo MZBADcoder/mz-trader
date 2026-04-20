@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from infrastructure.repositories.market_bar_repository import MarketBarRepository
+from infrastructure.repositories.market_ticker_bars_state_repository import MarketTickerBarsStateRepository
 from infrastructure.repositories.user_repository import UserRepository
 from infrastructure.repositories.watchlist_repository import WatchlistRepository
 
@@ -14,6 +16,8 @@ class SqlAlchemyUnitOfWork:
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
         self._session: AsyncSession | None = None
+        self._bars: MarketBarRepository | None = None
+        self._ticker_bars_state: MarketTickerBarsStateRepository | None = None
         self._users: UserRepository | None = None
         self._watchlist: WatchlistRepository | None = None
 
@@ -32,15 +36,31 @@ class SqlAlchemyUnitOfWork:
         return self._users
 
     @property
+    def bars(self) -> MarketBarRepository:
+        """Return the active market bar repository."""
+        if self._bars is None:
+            raise RuntimeError("Market bar repository is not available in the active unit of work.")
+        return self._bars
+
+    @property
     def watchlist(self) -> WatchlistRepository:
         """Return the active watchlist repository."""
         if self._watchlist is None:
             raise RuntimeError("Watchlist repository is not available in the active unit of work.")
         return self._watchlist
 
+    @property
+    def ticker_bars_state(self) -> MarketTickerBarsStateRepository:
+        """Return the active ticker bars state repository."""
+        if self._ticker_bars_state is None:
+            raise RuntimeError("Ticker bars state repository is not available in the active unit of work.")
+        return self._ticker_bars_state
+
     async def __aenter__(self) -> "SqlAlchemyUnitOfWork":
         session = self._session_factory()
         self._session = session
+        self._bars = MarketBarRepository(session)
+        self._ticker_bars_state = MarketTickerBarsStateRepository(session)
         self._users = UserRepository(session)
         self._watchlist = WatchlistRepository(session)
         return self
@@ -52,6 +72,8 @@ class SqlAlchemyUnitOfWork:
             await self._session.rollback()
         await self._session.close()
         self._session = None
+        self._bars = None
+        self._ticker_bars_state = None
         self._users = None
         self._watchlist = None
 

@@ -128,6 +128,86 @@ class MarketSnapshotUpstreamUnavailableError(AppError):
     status_code = 503
 
 
+class MarketBarsResolutionUnsupportedError(AppError):
+    """Requested chart resolution is not supported."""
+
+    code = "MARKET_BARS_RESOLUTION_UNSUPPORTED"
+    message = "Chart resolution is not supported."
+    status_code = 422
+
+
+class MarketBarsSessionUnsupportedError(AppError):
+    """Requested chart session is not supported."""
+
+    code = "MARKET_BARS_SESSION_UNSUPPORTED"
+    message = "Chart session is not supported."
+    status_code = 422
+
+
+class MarketBarsUnsupportedSessionResolutionError(AppError):
+    """Requested session + resolution combination is not supported."""
+
+    code = "MARKET_BARS_UNSUPPORTED_SESSION_RESOLUTION"
+    message = "Chart session and resolution combination is not supported."
+    status_code = 422
+
+
+class MarketBarsRangeInvalidError(AppError):
+    """Requested chart range is invalid."""
+
+    code = "MARKET_BARS_RANGE_INVALID"
+    message = "Chart range is invalid."
+    status_code = 422
+
+
+class MarketBarsCountBackInvalidError(AppError):
+    """Requested count_back is invalid."""
+
+    code = "MARKET_BARS_COUNT_BACK_INVALID"
+    message = "count_back is invalid."
+    status_code = 422
+
+
+class MarketBarsCountBackTooLargeError(AppError):
+    """Requested count_back exceeds the supported cap."""
+
+    code = "MARKET_BARS_COUNT_BACK_TOO_LARGE"
+    message = "count_back is too large."
+    status_code = 422
+
+
+class MarketBarsQueryModeInvalidError(AppError):
+    """The bars query mixes unsupported query mode parameters."""
+
+    code = "MARKET_BARS_QUERY_MODE_INVALID"
+    message = "Chart query mode is invalid."
+    status_code = 422
+
+
+class MarketBarsRangeTooLargeError(AppError):
+    """The requested bars range is too large."""
+
+    code = "MARKET_BARS_RANGE_TOO_LARGE"
+    message = "Chart range is too large."
+    status_code = 422
+
+
+class MarketBarsAdjustmentUnsupportedError(AppError):
+    """The requested adjustment mode is not implemented."""
+
+    code = "MARKET_BARS_ADJUSTMENT_UNSUPPORTED"
+    message = "Chart adjustment mode is not supported."
+    status_code = 422
+
+
+class MarketBarsUpstreamUnavailableError(AppError):
+    """Upstream bars provider is unavailable."""
+
+    code = "MARKET_BARS_UPSTREAM_UNAVAILABLE"
+    message = "Market bars provider is unavailable."
+    status_code = 503
+
+
 class InternalError(AppError):
     """Internal service failure with a stable outward-facing payload."""
 

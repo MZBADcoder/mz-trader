@@ -5,20 +5,28 @@ from __future__ import annotations
 from application.services import (
     AddWatchlistItemService,
     GetBatchSnapshotsService,
+    GetBarsService,
     GetCurrentUserService,
     GetMarketDataCapabilitiesService,
     GetWatchlistService,
     LoginUserService,
     RegisterUserService,
+    RunBarsRetentionCleanupService,
+    RunBarsStartupReconciliationService,
+    RunCurrentDayBarsRefreshService,
+    RunHistoricalBarsGapReconciliationService,
+    RunPostCloseBarsFinalizerService,
     RunSnapshotCoordinatorRefreshService,
+    RunTickerBarsBootstrapService,
     SearchTickersService,
     DeleteWatchlistItemService,
 )
 from domain.rules import build_market_data_mode
 from infrastructure.cache import RedisSnapshotStore, create_redis_client
+from infrastructure.calendar import UsStockCalendar
 from infrastructure.db.session import create_database_runtime
 from infrastructure.db.uow import SqlAlchemyUnitOfWorkFactory
-from infrastructure.external import MassiveReferenceClient, MassiveSnapshotClient
+from infrastructure.external import MassiveBarsClient, MassiveReferenceClient, MassiveSnapshotClient
 from infrastructure.security import JwtService, PBKDF2PasswordHasher
 from settings import Settings
 
@@ -49,11 +57,17 @@ class Container:
             base_url=settings.massive_base_url,
             timeout_seconds=settings.massive_timeout_seconds,
         )
+        self._bars_client = MassiveBarsClient(
+            api_key=settings.massive_api_key,
+            base_url=settings.massive_base_url,
+            timeout_seconds=settings.massive_timeout_seconds,
+        )
         self._snapshot_client = MassiveSnapshotClient(
             api_key=settings.massive_api_key,
             base_url=settings.massive_base_url,
             timeout_seconds=settings.massive_timeout_seconds,
         )
+        self._calendar = UsStockCalendar()
         self._redis = create_redis_client(settings.redis_url)
         self._snapshot_store = RedisSnapshotStore(
             self._redis,
@@ -96,6 +110,11 @@ class Container:
             request_limit=settings.market_data_snapshot_request_limit,
             batch_size=settings.market_data_snapshot_batch_size,
         )
+        self._get_bars_service = GetBarsService(
+            uow_factory=self._uow_factory,
+            calendar=self._calendar,
+            mode=self._market_data_mode,
+        )
         self._run_snapshot_coordinator_refresh_service = RunSnapshotCoordinatorRefreshService(
             uow_factory=self._uow_factory,
             snapshot_store=self._snapshot_store,
@@ -103,6 +122,41 @@ class Container:
             mode=self._market_data_mode,
             batch_size=settings.market_data_snapshot_batch_size,
             refresh_lock_ttl_seconds=settings.resolved_market_data_snapshot_refresh_lock_ttl_seconds,
+        )
+        self._run_current_day_bars_refresh_service = RunCurrentDayBarsRefreshService(
+            uow_factory=self._uow_factory,
+            bars_client=self._bars_client,
+            calendar=self._calendar,
+            mode=self._market_data_mode,
+        )
+        self._run_post_close_bars_finalizer_service = RunPostCloseBarsFinalizerService(
+            uow_factory=self._uow_factory,
+            bars_client=self._bars_client,
+            calendar=self._calendar,
+            mode=self._market_data_mode,
+        )
+        self._run_ticker_bars_bootstrap_service = RunTickerBarsBootstrapService(
+            uow_factory=self._uow_factory,
+            bars_client=self._bars_client,
+            calendar=self._calendar,
+            mode=self._market_data_mode,
+        )
+        self._run_bars_startup_reconciliation_service = RunBarsStartupReconciliationService(
+            uow_factory=self._uow_factory,
+            bootstrap_service=self._run_ticker_bars_bootstrap_service,
+            mode=self._market_data_mode,
+        )
+        self._run_historical_bars_gap_reconciliation_service = RunHistoricalBarsGapReconciliationService(
+            uow_factory=self._uow_factory,
+            bars_client=self._bars_client,
+            calendar=self._calendar,
+            bootstrap_service=self._run_ticker_bars_bootstrap_service,
+            mode=self._market_data_mode,
+        )
+        self._run_bars_retention_cleanup_service = RunBarsRetentionCleanupService(
+            uow_factory=self._uow_factory,
+            calendar=self._calendar,
+            mode=self._market_data_mode,
         )
 
     def get_register_user_service(self) -> RegisterUserService:
@@ -132,12 +186,36 @@ class Container:
     def get_batch_snapshots_service(self) -> GetBatchSnapshotsService:
         return self._get_batch_snapshots_service
 
+    def get_bars_service(self) -> GetBarsService:
+        return self._get_bars_service
+
     def get_run_snapshot_coordinator_refresh_service(self) -> RunSnapshotCoordinatorRefreshService:
         return self._run_snapshot_coordinator_refresh_service
+
+    def get_run_current_day_bars_refresh_service(self) -> RunCurrentDayBarsRefreshService:
+        return self._run_current_day_bars_refresh_service
+
+    def get_run_post_close_bars_finalizer_service(self) -> RunPostCloseBarsFinalizerService:
+        return self._run_post_close_bars_finalizer_service
+
+    def get_run_ticker_bars_bootstrap_service(self) -> RunTickerBarsBootstrapService:
+        return self._run_ticker_bars_bootstrap_service
+
+    def get_run_bars_startup_reconciliation_service(self) -> RunBarsStartupReconciliationService:
+        return self._run_bars_startup_reconciliation_service
+
+    def get_run_historical_bars_gap_reconciliation_service(
+        self,
+    ) -> RunHistoricalBarsGapReconciliationService:
+        return self._run_historical_bars_gap_reconciliation_service
+
+    def get_run_bars_retention_cleanup_service(self) -> RunBarsRetentionCleanupService:
+        return self._run_bars_retention_cleanup_service
 
     async def shutdown(self) -> None:
         """Dispose long-lived infra dependencies."""
         await self._reference_client.close()
+        await self._bars_client.close()
         await self._snapshot_client.close()
         await self._redis.aclose()
         await self._engine.dispose()

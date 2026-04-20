@@ -11,7 +11,8 @@ from fastapi.testclient import TestClient
 
 from application.container import Container
 from domain.exceptions import MarketSnapshotUpstreamUnavailableError
-from domain.entities import Snapshot
+from domain.entities import CanonicalBar, Snapshot
+from infrastructure.repositories.market_bar_repository import MarketBarRepository
 from infrastructure.repositories.watchlist_repository import WatchlistRepository
 from main import create_app
 from settings import Settings
@@ -81,6 +82,16 @@ def _seed_watchlist(session_factory, *, user_id: str, tickers: list[str]) -> Non
             repository = WatchlistRepository(session)
             for ticker in tickers:
                 await repository.add(user_id=user_id, ticker=ticker)
+            await session.commit()
+
+    asyncio.run(seed())
+
+
+def _seed_bars_1m(session_factory, bars: list[CanonicalBar]) -> None:
+    async def seed() -> None:
+        async with session_factory() as session:
+            repository = MarketBarRepository(session)
+            await repository.upsert_1m(bars)
             await session.commit()
 
     asyncio.run(seed())
@@ -251,3 +262,53 @@ def test_snapshot_coordinator_refreshes_unique_tickers_and_api_reads_results(
     assert response.status_code == 200
     returned_tickers = [item["ticker"] for item in response.json()["items"]]
     assert returned_tickers == ["AAPL", "MSFT"]
+
+
+def test_market_data_bars_returns_seeded_intraday_bars_with_headers(client, session_factory) -> None:
+    _, access_token = _register_and_authenticate(client, email="bars@example.com")
+    _seed_bars_1m(
+        session_factory,
+        bars=[
+            CanonicalBar(
+                ticker="AAPL",
+                adjustment="split_adjusted",
+                granularity="1m",
+                bucket_start_at=datetime(2026, 4, 15, 13, 30, tzinfo=UTC),
+                trading_day=datetime(2026, 4, 15, 13, 30, tzinfo=UTC).date(),
+                session_kind="regular",
+                open=100.0,
+                high=101.0,
+                low=99.5,
+                close=100.5,
+                volume=10,
+                vw=100.4,
+                trade_count=2,
+                provider_updated_at=datetime(2026, 4, 15, 13, 30, tzinfo=UTC),
+                is_final=True,
+                first_synced_at=datetime(2026, 4, 15, 13, 31, tzinfo=UTC),
+                last_synced_at=datetime(2026, 4, 15, 13, 31, tzinfo=UTC),
+            )
+        ],
+    )
+
+    response = client.get(
+        "/api/v1/market-data/bars",
+        params={
+            "ticker": "AAPL",
+            "resolution": "1m",
+            "session": "regular",
+            "from": "2026-04-15T13:30:00Z",
+            "to": "2026-04-15T13:31:00Z",
+            "fill": "none",
+        },
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["bars"][0]["time"] == "2026-04-15T13:30:00Z"
+    assert payload["bars"][0]["close"] == 100.5
+    assert payload["meta"]["ticker"] == "AAPL"
+    assert payload["meta"]["readiness"] == "ready"
+    assert response.headers["X-Data-Source"] == "db"
+    assert response.headers["X-Partial-Range"] == "false"

@@ -56,3 +56,51 @@ class SnapshotsResponse(BaseModel):
 
     items: list[SnapshotItemResponse]
     meta: SnapshotsMetaResponse
+
+
+class BarResponse(BaseModel):
+    """Frontend-facing chart bar."""
+
+    time: datetime
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: int
+    vw: float | None
+    trade_count: int
+    is_final: bool
+    is_synthetic: bool
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class BarsMetaResponse(BaseModel):
+    """Metadata returned with a bars response."""
+
+    ticker: str
+    resolution: str
+    session: str
+    adjustment: str
+    fill: str
+    requested_from: datetime | None
+    requested_to: datetime | None
+    effective_from: datetime | None
+    effective_to: datetime | None
+    effective_trading_day: str | None
+    market_timezone: str
+    source_granularity: str
+    data_source: str
+    partial_range: bool
+    readiness: str
+    calendar_shifted: bool
+    contains_partial_bar: bool
+    delay_minutes: int
+    request_id: str
+
+
+class BarsResponse(BaseModel):
+    """Response envelope for chart bars."""
+
+    bars: list[BarResponse]
+    meta: BarsMetaResponse

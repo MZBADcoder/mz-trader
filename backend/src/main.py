@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -26,7 +27,10 @@ async def lifespan(app: FastAPI):
         "application startup",
         extra={"app_env": settings.app_env, "log_path": str(settings.app_log_path)},
     )
+    startup_task = asyncio.create_task(_run_startup_reconciliation(app.state.container))
+    app.state.startup_reconciliation_task = startup_task
     yield
+    await _await_background_task(app.state.startup_reconciliation_task)
     await app.state.container.shutdown()
     logger.info("application shutdown", extra={"app_env": settings.app_env})
 
@@ -46,6 +50,42 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     register_exception_handlers(app)
     app.include_router(api_router)
     return app
+
+async def _run_startup_reconciliation(container: Container) -> None:
+    try:
+        result = await container.get_run_bars_startup_reconciliation_service().execute()
+    except Exception:
+        logger.exception("startup bars reconciliation failed")
+        return
+
+    logger.info(
+        "startup bars reconciliation completed",
+        extra={
+            "status": result.status,
+            "total_tickers": result.total_tickers,
+            "processed_tickers": result.processed_tickers,
+            "failed_tickers": result.failed_tickers or [],
+            "skip_reason": result.skip_reason,
+        },
+    )
+
+
+async def _await_background_task(task: asyncio.Task[None] | None) -> None:
+    if task is None:
+        return
+    if task.done():
+        try:
+            await task
+        except Exception:
+            logger.exception("background task completed with error")
+        return
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        return
+    except Exception:
+        logger.exception("background task completed with error")
 
 
 app = create_app()

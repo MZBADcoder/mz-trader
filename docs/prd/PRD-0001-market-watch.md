@@ -125,10 +125,37 @@
 
 ### F4：Market Bars
 
-- 提供 `GET /api/market-data/bars`。
+- 提供 `GET /api/v1/market-data/bars`。
 - 最小查询维度为单个 `ticker`。
-- 支持 `timespan`、`multiplier`、`session`、`from`、`to`、`limit` 等查询参数。
+- 前端面向统一参数模型，不直接暴露 Massive 原始 `timespan` / `multiplier` 风格参数。
+- bars 接口至少支持：
+  - `resolution`
+  - `session`
+  - `from`
+  - `to`
+  - `count_back`
+  - `adjustment`
+  - `fill`
+  - `include_partial`
+- `resolution` 至少支持：
+  - `1m`
+  - `5m`
+  - `15m`
+  - `30m`
+  - `60m`
+  - `1D`
+  - `1W`
+  - `1M`
+  - `1Q`
+- `session` 在 MVP 至少支持：
+  - `pre_market`
+  - `regular`
+  - `after_hours`
 - bars 查询优先读取数据库；miss 时回源 Massive，成功后写入数据库。
+- bars 存储层以 `1m` 与 `1d` 为 canonical source；其它 resolution 由 backend 聚合。
+- `1d` canonical 只保存 completed regular-day bars；当前未完成的 `1D / 1W / 1M / 1Q` 最后一根可由 `1m` 动态拼接。
+- 对当前交易日的 mutable tail，backend 允许 read-through Massive 并 upsert `1m` canonical。
+- Massive provider truth 可能是 sparse 的；backend 需要支持可选的 fill 策略供图表连续显示。
 - 返回 `X-Data-Source` 与 `X-Partial-Range`，用于前端可视化数据来源与范围截断。
 - bars 的实时拼接、最终固化、以及与未来增量更新机制的精细协同逻辑不在本 PRD 细化，由单独 backend evolution 文档定义。
 

@@ -123,6 +123,8 @@ def integration_settings(
         market_data_snapshot_batch_size=base_settings.market_data_snapshot_batch_size,
         market_data_snapshot_refresh_interval_seconds=base_settings.market_data_snapshot_refresh_interval_seconds,
         market_data_snapshot_ttl_seconds=base_settings.market_data_snapshot_ttl_seconds,
+        market_data_bars_current_day_refresh_interval_seconds=base_settings.market_data_bars_current_day_refresh_interval_seconds,
+        market_data_bars_post_close_finalizer_interval_seconds=base_settings.market_data_bars_post_close_finalizer_interval_seconds,
         log_dir=tmp_path_factory.mktemp("integration-logs"),
         log_file_name="integration.log",
         log_to_stdout=False,

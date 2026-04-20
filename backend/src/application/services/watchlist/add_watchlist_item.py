@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from domain.entities import WatchlistItem
 from domain.exceptions import (
     WatchlistLimitExceededError,
@@ -41,5 +43,9 @@ class AddWatchlistItemService:
                 raise WatchlistLimitExceededError()
 
             item = await uow.watchlist.add(user_id=user_id, ticker=normalized_ticker)
+            await uow.ticker_bars_state.ensure_pending(
+                ticker=normalized_ticker,
+                requested_at=datetime.now(UTC),
+            )
             await uow.commit()
             return item
