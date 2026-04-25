@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from celery import Celery
+from celery.schedules import crontab
 
 from settings import get_settings
 
@@ -17,7 +18,7 @@ celery_app = Celery(
 )
 
 celery_app.conf.update(
-    timezone="UTC",
+    timezone="America/New_York",
     enable_utc=True,
     task_ignore_result=True,
     beat_schedule={
@@ -39,7 +40,10 @@ celery_app.conf.update(
         },
         "historical-bars-gap-reconciliation": {
             "task": "worker.tasks.bar_refresh.run_historical_bars_gap_reconciliation",
-            "schedule": settings.resolved_market_data_bars_gap_reconcile_interval_seconds,
+            "schedule": crontab(
+                minute=settings.market_data_bars_gap_reconcile_minute_et,
+                hour=settings.market_data_bars_gap_reconcile_hour_et,
+            ),
         },
         "bars-retention-cleanup": {
             "task": "worker.tasks.bar_refresh.run_bars_retention_cleanup",

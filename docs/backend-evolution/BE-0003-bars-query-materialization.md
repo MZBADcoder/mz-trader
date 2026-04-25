@@ -1406,7 +1406,7 @@ for each tracked ticker
 
 用途：
 
-- 异步补历史 `1m` / `1d` gaps
+- 异步补 regular 历史 `1m` / `1d` gaps
 - 不阻塞用户当前请求
 
 建议频率：
@@ -1416,13 +1416,29 @@ for each tracked ticker
 
 处理优先级：
 
-- 先补最近若干 trading days
-- 再补更老的历史
+- 先基于交易日历生成 expected regular `1m` buckets 与 completed regular `1d` days
+- 对照 DB 已有 canonical rows
+- 只向 Massive 请求缺失的连续 gap ranges
 - fresh `initializing` ticker 不参与本轮 reconciliation
 - timed-out `initializing` ticker 可交给 bootstrap 恢复
 
+执行流程：
+
+```text
+for each ready tracked ticker
+  -> list existing regular 1m rows in retained window
+  -> list existing completed 1d rows in recent daily window
+  -> compute missing minute/day ranges
+  -> fetch only missing ranges from Massive
+  -> upsert returned provider truth
+```
+
 说明：
 
+- historical reconciler 不处理 `pre_market` / `after_hours`
+- extended-hours current tail 由 current-day refresher 维护，并由 session-aware retention 控制保留范围
+- 可通过 Celery 手动触发：
+  - `PYTHONPATH=src poetry run celery -A worker.celery_app call worker.tasks.bar_refresh.run_historical_bars_gap_reconciliation`
 - `historical gap reconciler` 与 `startup reconciliation` 在概念上分属两个场景：
   - `startup reconciliation`
     - 冷启动恢复
@@ -1662,7 +1678,8 @@ initializing timeout
 - post-close finalizer：
   - close 后 `2-5` 分钟首轮
 - historical reconciler：
-  - 低频异步批量运行
+  - 每天 `02:00 ET` 运行一次
+  - 运行窗口位于 after-hours 结束与 pre-market 开始之间
 - initializing timeout：
   - `10 minutes`
 - regular `1m` retention：

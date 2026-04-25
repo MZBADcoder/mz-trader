@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import cast
 
 from application.services.market_data._bars_maintenance_support import (
@@ -17,7 +17,8 @@ from application.services.market_data.run_historical_bars_gap_reconciliation imp
 from application.services.market_data.run_bars_retention_cleanup import RunBarsRetentionCleanupService
 from application.services.market_data.run_post_close_bars_finalizer import RunPostCloseBarsFinalizerService
 from application.services.market_data.run_ticker_bars_bootstrap import RunTickerBarsBootstrapService
-from domain.entities import CanonicalBar, MarketDataMode, TickerBarsState
+from domain.entities import CanonicalBar, MarketDataMode, ProviderBar, TickerBarsState
+from domain.rules import MARKET_BARS_1M_RETENTION_TRADING_DAYS
 from infrastructure.calendar import UsStockCalendar
 from infrastructure.db.uow import SqlAlchemyUnitOfWorkFactory
 from infrastructure.external import MassiveBarsClient
@@ -98,6 +99,51 @@ def _canonical_1d(*, trading_day: date, bucket_start_at: datetime) -> CanonicalB
         first_synced_at=bucket_start_at,
         last_synced_at=bucket_start_at,
     )
+
+
+def _historical_reconciliation_minute_rows(
+    *,
+    calendar: UsStockCalendar,
+    anchor_day: date,
+    effective_now: datetime,
+    omit: set[datetime] | None = None,
+) -> list[CanonicalBar]:
+    omitted = omit or set()
+    rows: list[CanonicalBar] = []
+    for day in calendar.previous_trading_days(anchor_day, MARKET_BARS_1M_RETENTION_TRADING_DAYS):
+        window = calendar.regular_session_window(day)
+        current = window.start_at
+        end_at = min(window.end_at, effective_now)
+        while current + timedelta(minutes=1) <= end_at:
+            if current not in omitted:
+                trading_day, session_kind = calendar.classify_session(current)
+                assert session_kind == "regular"
+                rows.append(
+                    _canonical_1m(
+                        trading_day=trading_day,
+                        bucket_start_at=current,
+                        session_kind=session_kind,
+                    )
+                )
+            current += timedelta(minutes=1)
+    return rows
+
+
+def _historical_reconciliation_daily_rows(
+    *,
+    calendar: UsStockCalendar,
+    anchor_day: date,
+    effective_now: datetime,
+) -> list[CanonicalBar]:
+    completed_end_day = anchor_day
+    market_day = calendar.to_market_date(effective_now)
+    if calendar.is_trading_day(market_day) and anchor_day == market_day:
+        completed_end_day = calendar.previous_trading_day(anchor_day)
+    start_day = calendar.previous_trading_days(anchor_day, 90)[0]
+    return [
+        _canonical_1d(trading_day=day, bucket_start_at=calendar.regular_session_window(day).start_at)
+        for day in calendar.trading_days_between(start_day, completed_end_day)
+    ]
 
 
 def test_build_ready_state_preserves_existing_earliest_bounds_on_incremental_updates() -> None:
@@ -197,6 +243,35 @@ class FakeBarsRepository:
     def __init__(self) -> None:
         self.deleted_1m_calls: list[tuple[date, list[str] | None]] = []
         self.deleted_1d_threshold: date | None = None
+        self.minute_rows: list[CanonicalBar] = []
+        self.daily_rows: list[CanonicalBar] = []
+        self.upserted_1m: list[CanonicalBar] = []
+        self.upserted_1d: list[CanonicalBar] = []
+
+    async def list_1m(self, *, ticker, adjustment, start_at, end_at, session_kind=None):
+        return [
+            row
+            for row in self.minute_rows
+            if row.ticker == ticker
+            and row.adjustment == adjustment
+            and start_at <= row.bucket_start_at < end_at
+            and (session_kind is None or row.session_kind == session_kind)
+        ]
+
+    async def list_1d(self, *, ticker, adjustment, start_day, end_day):
+        return [
+            row
+            for row in self.daily_rows
+            if row.ticker == ticker
+            and row.adjustment == adjustment
+            and start_day <= row.trading_day <= end_day
+        ]
+
+    async def upsert_1m(self, bars: list[CanonicalBar]) -> None:
+        self.upserted_1m.extend(bars)
+
+    async def upsert_1d(self, bars: list[CanonicalBar]) -> None:
+        self.upserted_1d.extend(bars)
 
     async def delete_1m_before(
         self,
@@ -287,9 +362,14 @@ class FakeUowFactory:
 class FakeBarsClient:
     def __init__(self) -> None:
         self.fetch_calls = 0
+        self.calls: list[dict] = []
+        self.responses: list[list[ProviderBar]] = []
 
     async def fetch_range(self, **kwargs):
         self.fetch_calls += 1
+        self.calls.append(kwargs)
+        if self.responses:
+            return self.responses.pop(0)
         return []
 
 
@@ -377,6 +457,100 @@ def test_historical_reconciliation_only_bootstraps_timed_out_initializing_ticker
     assert bootstrap_service.tickers == ["MSFT"]
     assert bars_client.fetch_calls == 0
     assert result.processed_tickers == 1
+
+
+def test_historical_reconciliation_skips_provider_when_no_gaps_exist() -> None:
+    bars = FakeBarsRepository()
+    calendar = UsStockCalendar()
+    trading_day = date(2026, 4, 21)
+    regular = calendar.regular_session_window(trading_day)
+    effective_now = regular.start_at + timedelta(minutes=2)
+    bars.minute_rows = _historical_reconciliation_minute_rows(
+        calendar=calendar,
+        anchor_day=trading_day,
+        effective_now=effective_now,
+    )
+    bars.daily_rows = _historical_reconciliation_daily_rows(
+        calendar=calendar,
+        anchor_day=trading_day,
+        effective_now=effective_now,
+    )
+    state_repository = FakeTickerBarsStateRepository([_state()])
+    uow = FakeUow(bars, state_repository, FakeWatchlistRepository(["AAPL"]))
+    bars_client = FakeBarsClient()
+    bootstrap_service = FakeBootstrapService()
+    service = RunHistoricalBarsGapReconciliationService(
+        uow_factory=cast(SqlAlchemyUnitOfWorkFactory, FakeUowFactory(uow)),
+        bars_client=cast(MassiveBarsClient, bars_client),
+        calendar=calendar,
+        bootstrap_service=cast(RunTickerBarsBootstrapService, bootstrap_service),
+        mode=MarketDataMode(delay_minutes=0),
+        now_provider=lambda: effective_now,
+    )
+
+    result = asyncio.run(service.execute())
+
+    assert result.processed_tickers == 1
+    assert bars_client.fetch_calls == 0
+    assert bars.upserted_1m == []
+    assert bars.upserted_1d == []
+
+
+def test_historical_reconciliation_fetches_only_missing_minute_gap() -> None:
+    bars = FakeBarsRepository()
+    calendar = UsStockCalendar()
+    trading_day = date(2026, 4, 21)
+    regular = calendar.regular_session_window(trading_day)
+    effective_now = regular.start_at + timedelta(minutes=3)
+    missing_start = regular.start_at + timedelta(minutes=1)
+    bars.minute_rows = _historical_reconciliation_minute_rows(
+        calendar=calendar,
+        anchor_day=trading_day,
+        effective_now=effective_now,
+        omit={missing_start},
+    )
+    bars.daily_rows = _historical_reconciliation_daily_rows(
+        calendar=calendar,
+        anchor_day=trading_day,
+        effective_now=effective_now,
+    )
+    state_repository = FakeTickerBarsStateRepository([_state()])
+    uow = FakeUow(bars, state_repository, FakeWatchlistRepository(["AAPL"]))
+    bars_client = FakeBarsClient()
+    bars_client.responses = [
+        [
+            ProviderBar(
+                time=missing_start,
+                open=100.0,
+                high=101.0,
+                low=99.0,
+                close=100.5,
+                volume=10,
+                vw=100.4,
+                trade_count=2,
+                provider_updated_at=missing_start,
+            )
+        ]
+    ]
+    bootstrap_service = FakeBootstrapService()
+    service = RunHistoricalBarsGapReconciliationService(
+        uow_factory=cast(SqlAlchemyUnitOfWorkFactory, FakeUowFactory(uow)),
+        bars_client=cast(MassiveBarsClient, bars_client),
+        calendar=calendar,
+        bootstrap_service=cast(RunTickerBarsBootstrapService, bootstrap_service),
+        mode=MarketDataMode(delay_minutes=0),
+        now_provider=lambda: effective_now,
+    )
+
+    result = asyncio.run(service.execute())
+
+    assert result.processed_tickers == 1
+    assert bars_client.fetch_calls == 1
+    assert bars_client.calls[0]["timespan"] == "minute"
+    assert bars_client.calls[0]["from_value"] == str(int(missing_start.timestamp() * 1000))
+    assert bars_client.calls[0]["to_value"] == str(int((missing_start + timedelta(minutes=1)).timestamp() * 1000))
+    assert [row.bucket_start_at for row in bars.upserted_1m] == [missing_start]
+    assert bars.upserted_1d == []
 
 
 def test_post_close_finalizer_skips_initializing_tickers() -> None:

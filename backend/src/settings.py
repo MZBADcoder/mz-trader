@@ -41,7 +41,8 @@ class Settings(BaseSettings):
     market_data_bars_current_day_refresh_interval_seconds: int | None = None
     market_data_bars_post_close_finalizer_interval_seconds: int | None = None
     market_data_bars_bootstrap_interval_seconds: int | None = None
-    market_data_bars_gap_reconcile_interval_seconds: int | None = None
+    market_data_bars_gap_reconcile_hour_et: int = 2
+    market_data_bars_gap_reconcile_minute_et: int = 0
     market_data_bars_retention_cleanup_interval_seconds: int | None = None
 
     log_level: str = "INFO"
@@ -101,13 +102,6 @@ class Settings(BaseSettings):
         if self.market_data_bars_bootstrap_interval_seconds is not None:
             return self.market_data_bars_bootstrap_interval_seconds
         return 60
-
-    @property
-    def resolved_market_data_bars_gap_reconcile_interval_seconds(self) -> int:
-        """Return the effective cadence for retained-window gap reconciliation."""
-        if self.market_data_bars_gap_reconcile_interval_seconds is not None:
-            return self.market_data_bars_gap_reconcile_interval_seconds
-        return 3600
 
     @property
     def resolved_market_data_bars_retention_cleanup_interval_seconds(self) -> int:

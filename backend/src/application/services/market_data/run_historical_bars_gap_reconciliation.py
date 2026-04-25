@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime, timedelta
+from dataclasses import dataclass
+from datetime import UTC, date, datetime, timedelta
 from typing import Callable
 
 from application.services.market_data._bars_maintenance_support import (
     build_canonical_1m_rows,
     build_ready_state,
-    retain_latest_extended_session_rows,
 )
 from application.services.market_data.run_ticker_bars_bootstrap import RunTickerBarsBootstrapService
 from domain.entities import BarsMaintenanceResult, CanonicalBar, MarketDataMode
@@ -20,6 +20,18 @@ from infrastructure.external import MassiveBarsClient
 
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(slots=True)
+class _TimeRange:
+    start_at: datetime
+    end_at: datetime
+
+
+@dataclass(slots=True)
+class _DayRange:
+    start_day: date
+    end_day: date
 
 
 class RunHistoricalBarsGapReconciliationService:
@@ -111,40 +123,77 @@ class RunHistoricalBarsGapReconciliationService:
         ticker: str,
         minute_start_at: datetime,
         minute_end_at: datetime,
-        daily_start_day,
-        anchor_day,
+        daily_start_day: date,
+        anchor_day: date,
         effective_now: datetime,
     ) -> None:
         synced_at = self._now_provider().astimezone(UTC)
-        minute_provider_bars = await self._bars_client.fetch_range(
-            ticker=ticker,
-            multiplier=1,
-            timespan="minute",
-            from_value=str(int(minute_start_at.timestamp() * 1000)),
-            to_value=str(int(minute_end_at.timestamp() * 1000)),
-            adjusted=True,
-        )
-        minute_rows = build_canonical_1m_rows(
-            ticker=ticker,
-            adjustment="split_adjusted",
-            provider_bars=minute_provider_bars,
-            calendar=self._calendar,
+        completed_daily_end_day = self._completed_daily_end_day(anchor_day=anchor_day, effective_now=effective_now)
+        async with self._uow_factory.build() as uow:
+            existing_minute_rows = await uow.bars.list_1m(
+                ticker=ticker,
+                adjustment="split_adjusted",
+                start_at=minute_start_at,
+                end_at=minute_end_at,
+                session_kind="regular",
+            )
+            existing_daily_rows = await uow.bars.list_1d(
+                ticker=ticker,
+                adjustment="split_adjusted",
+                start_day=daily_start_day,
+                end_day=completed_daily_end_day,
+            )
+
+        minute_ranges = self._find_missing_minute_ranges(
+            existing_rows=existing_minute_rows,
+            start_at=minute_start_at,
+            end_at=minute_end_at,
+            anchor_day=anchor_day,
             effective_now=effective_now,
-            synced_at=synced_at,
         )
-        minute_rows = retain_latest_extended_session_rows(
-            rows=minute_rows,
-            latest_extended_trading_day=anchor_day,
+        daily_ranges = self._find_missing_daily_ranges(
+            existing_rows=existing_daily_rows,
+            start_day=daily_start_day,
+            end_day=completed_daily_end_day,
         )
-        daily_provider_bars = await self._bars_client.fetch_range(
-            ticker=ticker,
-            multiplier=1,
-            timespan="day",
-            from_value=daily_start_day.isoformat(),
-            to_value=self._completed_daily_end_day(anchor_day=anchor_day, effective_now=effective_now).isoformat(),
-            adjusted=True,
-        )
-        daily_rows = self._to_daily_rows(ticker=ticker, provider_bars=daily_provider_bars, synced_at=synced_at)
+
+        minute_rows: list[CanonicalBar] = []
+        for missing_range in minute_ranges:
+            minute_provider_bars = await self._bars_client.fetch_range(
+                ticker=ticker,
+                multiplier=1,
+                timespan="minute",
+                from_value=str(int(missing_range.start_at.timestamp() * 1000)),
+                to_value=str(int(missing_range.end_at.timestamp() * 1000)),
+                adjusted=True,
+            )
+            minute_rows.extend(
+                build_canonical_1m_rows(
+                    ticker=ticker,
+                    adjustment="split_adjusted",
+                    provider_bars=minute_provider_bars,
+                    calendar=self._calendar,
+                    effective_now=effective_now,
+                    synced_at=synced_at,
+                )
+            )
+        minute_rows = [row for row in minute_rows if row.session_kind == "regular"]
+
+        daily_rows: list[CanonicalBar] = []
+        for missing_range in daily_ranges:
+            daily_provider_bars = await self._bars_client.fetch_range(
+                ticker=ticker,
+                multiplier=1,
+                timespan="day",
+                from_value=missing_range.start_day.isoformat(),
+                to_value=missing_range.end_day.isoformat(),
+                adjusted=True,
+            )
+            daily_rows.extend(self._to_daily_rows(ticker=ticker, provider_bars=daily_provider_bars, synced_at=synced_at))
+
+        if not minute_rows and not daily_rows:
+            return
+
         async with self._uow_factory.build() as uow:
             if minute_rows:
                 await uow.bars.upsert_1m(minute_rows)
@@ -194,3 +243,91 @@ class RunHistoricalBarsGapReconciliationService:
         if self._calendar.is_trading_day(market_day) and anchor_day == market_day:
             return self._calendar.previous_trading_day(anchor_day)
         return anchor_day
+
+    def _find_missing_minute_ranges(
+        self,
+        *,
+        existing_rows: list[CanonicalBar],
+        start_at: datetime,
+        end_at: datetime,
+        anchor_day: date,
+        effective_now: datetime,
+    ) -> list[_TimeRange]:
+        existing_starts = {row.bucket_start_at.astimezone(UTC) for row in existing_rows}
+        expected_starts: list[datetime] = []
+        for day in self._calendar.trading_days_between(
+            self._calendar.to_market_date(start_at),
+            self._calendar.to_market_date(end_at),
+        ):
+            expected_starts.extend(
+                self._expected_minute_starts(
+                    start_at=start_at,
+                    end_at=end_at,
+                    window_start_at=self._calendar.regular_session_window(day).start_at,
+                    window_end_at=self._calendar.regular_session_window(day).end_at,
+                    effective_now=effective_now,
+                )
+            )
+        return self._missing_time_ranges(
+            missing_starts=sorted(start for start in expected_starts if start not in existing_starts)
+        )
+
+    def _expected_minute_starts(
+        self,
+        *,
+        start_at: datetime,
+        end_at: datetime,
+        window_start_at: datetime,
+        window_end_at: datetime,
+        effective_now: datetime,
+    ) -> list[datetime]:
+        lower_bound = max(start_at, window_start_at)
+        upper_bound = min(end_at, window_end_at, effective_now)
+        starts: list[datetime] = []
+        current = lower_bound
+        while current + timedelta(minutes=1) <= upper_bound:
+            starts.append(current)
+            current += timedelta(minutes=1)
+        return starts
+
+    def _missing_time_ranges(self, *, missing_starts: list[datetime]) -> list[_TimeRange]:
+        if not missing_starts:
+            return []
+        ranges: list[_TimeRange] = []
+        range_start = missing_starts[0]
+        previous = missing_starts[0]
+        for current in missing_starts[1:]:
+            if current == previous + timedelta(minutes=1):
+                previous = current
+                continue
+            ranges.append(_TimeRange(start_at=range_start, end_at=previous + timedelta(minutes=1)))
+            range_start = current
+            previous = current
+        ranges.append(_TimeRange(start_at=range_start, end_at=previous + timedelta(minutes=1)))
+        return ranges
+
+    def _find_missing_daily_ranges(
+        self,
+        *,
+        existing_rows: list[CanonicalBar],
+        start_day: date,
+        end_day: date,
+    ) -> list[_DayRange]:
+        existing_days = {row.trading_day for row in existing_rows}
+        missing_days = [
+            day for day in self._calendar.trading_days_between(start_day, end_day) if day not in existing_days
+        ]
+        if not missing_days:
+            return []
+        ranges: list[_DayRange] = []
+        range_start = missing_days[0]
+        previous = missing_days[0]
+        for current in missing_days[1:]:
+            if current == self._calendar.next_trading_day(previous):
+                previous = current
+                continue
+            ranges.append(_DayRange(start_day=range_start, end_day=previous))
+            range_start = current
+            previous = current
+        ranges.append(_DayRange(start_day=range_start, end_day=previous))
+        return ranges
