@@ -12,8 +12,12 @@ from application.services.market_data._bars_maintenance_support import (
     build_ready_state,
     retain_latest_extended_session_rows,
 )
-from domain.entities import CanonicalBar, MarketDataMode, SnapshotCoordinatorRefreshResult
-from domain.rules import MARKET_BARS_1D_RETENTION_YEARS, MARKET_BARS_1M_RETENTION_TRADING_DAYS
+from domain.entities import CanonicalBar, MarketDataMode, SnapshotCoordinatorRefreshResult, TickerBarsState
+from domain.rules import (
+    MARKET_BARS_1D_RETENTION_YEARS,
+    MARKET_BARS_1M_RETENTION_TRADING_DAYS,
+    MARKET_BARS_INITIALIZING_TIMEOUT_MINUTES,
+)
 from infrastructure.calendar import UsStockCalendar
 from infrastructure.db.uow import SqlAlchemyUnitOfWorkFactory
 from infrastructure.external import MassiveBarsClient
@@ -47,7 +51,18 @@ class RunTickerBarsBootstrapService:
                 pending_states = await uow.ticker_bars_state.list_by_statuses(
                     statuses=["pending", "failed", "degraded", "initializing"]
                 )
-                target_tickers = [state.ticker for state in pending_states]
+                target_tickers = []
+                for state in pending_states:
+                    if state.status == "initializing":
+                        if not self._initializing_timed_out(state=state, effective_now=effective_now):
+                            continue
+                        await uow.ticker_bars_state.mark_failed(
+                            ticker=state.ticker,
+                            failed_at=effective_now,
+                            error_message="bootstrap initialization timed out before periodic retry.",
+                        )
+                    target_tickers.append(state.ticker)
+                await uow.commit()
             else:
                 target_tickers = sorted(set(tickers))
 
@@ -75,6 +90,11 @@ class RunTickerBarsBootstrapService:
             refreshed_tickers=bootstrapped,
             failed_tickers=failed_tickers,
         )
+
+    def _initializing_timed_out(self, *, state: TickerBarsState, effective_now: datetime) -> bool:
+        if state.bootstrap_started_at is None:
+            return True
+        return state.bootstrap_started_at <= effective_now - timedelta(minutes=MARKET_BARS_INITIALIZING_TIMEOUT_MINUTES)
 
     async def _bootstrap_ticker(self, *, ticker: str, effective_now: datetime) -> None:
         now_synced_at = self._now_provider().astimezone(UTC)

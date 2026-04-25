@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Callable
 
 from domain.entities import BarsMaintenanceResult, MarketDataMode
+from domain.rules import MARKET_BARS_INITIALIZING_TIMEOUT_MINUTES
 from infrastructure.db.uow import SqlAlchemyUnitOfWorkFactory
 
 from application.services.market_data.run_ticker_bars_bootstrap import RunTickerBarsBootstrapService
@@ -29,7 +30,7 @@ class RunBarsStartupReconciliationService:
 
     async def execute(self) -> BarsMaintenanceResult:
         effective_now = self._now_provider().astimezone(UTC) - timedelta(minutes=self._mode.delay_minutes)
-        timeout_before = effective_now - timedelta(minutes=30)
+        timeout_before = effective_now - timedelta(minutes=MARKET_BARS_INITIALIZING_TIMEOUT_MINUTES)
         async with self._uow_factory.build() as uow:
             tickers = await uow.watchlist.list_distinct_tickers()
             states = {state.ticker: state for state in await uow.ticker_bars_state.list_for_tickers(tickers=tickers)}

@@ -62,10 +62,14 @@ class RunPostCloseBarsFinalizerService:
 
         async with self._uow_factory.build() as uow:
             tickers = await uow.watchlist.list_distinct_tickers()
+            states = {state.ticker: state for state in await uow.ticker_bars_state.list_for_tickers(tickers=tickers)}
 
         finalized_tickers = 0
         failed_tickers: list[str] = []
         for ticker in tickers:
+            state = states.get(ticker)
+            if state is None or state.status not in {"ready", "degraded"}:
+                continue
             try:
                 provider_bars = await self._bars_client.fetch_range(
                     ticker=ticker,

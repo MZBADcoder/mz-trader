@@ -1334,6 +1334,9 @@ ready
 - state 的 owner 是 `ticker`，不是 user
 - 同一个 ticker 全局只初始化一次
 - 所有后台任务都只能通过同一个 ticker state 入口更新状态
+- fresh `initializing` 表示已有 bootstrap 在执行，普通周期任务不能重复接管
+- `initializing` 只有超过初始化超时窗口后，才能由 startup / historical reconciliation 恢复
+- ticker bootstrap 周期扫描也必须检测超时 `initializing`，先标记为 `failed` 再纳入本轮重试
 
 #### B. Current-Day `1m` Refresher
 
@@ -1387,6 +1390,7 @@ select tracked tickers
 
 ```text
 for each tracked ticker
+  -> skip ticker unless state is ready/degraded
   -> fetch current-day regular 1m from Massive
   -> upsert 1m canonical
   -> aggregate final regular 1D
@@ -1414,6 +1418,8 @@ for each tracked ticker
 
 - 先补最近若干 trading days
 - 再补更老的历史
+- fresh `initializing` ticker 不参与本轮 reconciliation
+- timed-out `initializing` ticker 可交给 bootstrap 恢复
 
 说明：
 
@@ -1568,14 +1574,14 @@ classify
 
 MVP 建议：
 
-- timeout：`10-30 minutes`
+- timeout：`10 minutes`
 
 超时后的处理：
 
 ```text
 initializing timeout
-  -> mark degraded
-  -> enqueue bootstrap resume / reconcile
+  -> mark failed/degraded by recovery entrypoint
+  -> bootstrap retry / reconciliation resume
 ```
 
 这样可以避免 ticker 永远卡在 `initializing`。
@@ -1657,6 +1663,8 @@ initializing timeout
   - close 后 `2-5` 分钟首轮
 - historical reconciler：
   - 低频异步批量运行
+- initializing timeout：
+  - `10 minutes`
 - regular `1m` retention：
   - 最近 `10` 个 trading days
 - pre/after `1m` retention：

@@ -11,10 +11,16 @@ from application.services.market_data._bars_maintenance_support import (
     clamp_state_to_retention,
     retain_latest_extended_session_rows,
 )
+from application.services.market_data.run_historical_bars_gap_reconciliation import (
+    RunHistoricalBarsGapReconciliationService,
+)
 from application.services.market_data.run_bars_retention_cleanup import RunBarsRetentionCleanupService
+from application.services.market_data.run_post_close_bars_finalizer import RunPostCloseBarsFinalizerService
+from application.services.market_data.run_ticker_bars_bootstrap import RunTickerBarsBootstrapService
 from domain.entities import CanonicalBar, MarketDataMode, TickerBarsState
 from infrastructure.calendar import UsStockCalendar
 from infrastructure.db.uow import SqlAlchemyUnitOfWorkFactory
+from infrastructure.external import MassiveBarsClient
 
 
 def _dt(year: int, month: int, day: int, hour: int = 0, minute: int = 0) -> datetime:
@@ -210,9 +216,14 @@ class FakeTickerBarsStateRepository:
     def __init__(self, states: list[TickerBarsState]) -> None:
         self._states = states
         self.upserted: list[TickerBarsState] = []
+        self.failed_tickers: list[str] = []
 
     async def list_by_statuses(self, *, statuses: list[str]) -> list[TickerBarsState]:
         return [state for state in self._states if state.status in statuses]
+
+    async def list_for_tickers(self, *, tickers: list[str]) -> list[TickerBarsState]:
+        ticker_set = set(tickers)
+        return [state for state in self._states if state.ticker in ticker_set]
 
     async def get_for_update(self, *, ticker: str) -> TickerBarsState | None:
         for state in self._states:
@@ -223,11 +234,36 @@ class FakeTickerBarsStateRepository:
     async def upsert(self, state: TickerBarsState) -> None:
         self.upserted.append(state)
 
+    async def mark_failed(self, *, ticker: str, failed_at: datetime, error_message: str) -> None:
+        self.failed_tickers.append(ticker)
+        state = await self.get_for_update(ticker=ticker)
+        if state is None:
+            return
+        state.status = "failed"
+        state.bootstrap_failed_at = failed_at
+        state.last_error_code = "bootstrap_failed"
+        state.last_error_message = error_message
+        state.updated_at = failed_at
+
+
+class FakeWatchlistRepository:
+    def __init__(self, tickers: list[str]) -> None:
+        self._tickers = tickers
+
+    async def list_distinct_tickers(self) -> list[str]:
+        return self._tickers
+
 
 class FakeUow:
-    def __init__(self, bars: FakeBarsRepository, state_repository: FakeTickerBarsStateRepository) -> None:
+    def __init__(
+        self,
+        bars: FakeBarsRepository,
+        state_repository: FakeTickerBarsStateRepository,
+        watchlist: FakeWatchlistRepository | None = None,
+    ) -> None:
         self.bars = bars
         self.ticker_bars_state = state_repository
+        self.watchlist = watchlist or FakeWatchlistRepository([])
         self.committed = False
 
     async def __aenter__(self):
@@ -246,6 +282,123 @@ class FakeUowFactory:
 
     def build(self) -> FakeUow:
         return self._uow
+
+
+class FakeBarsClient:
+    def __init__(self) -> None:
+        self.fetch_calls = 0
+
+    async def fetch_range(self, **kwargs):
+        self.fetch_calls += 1
+        return []
+
+
+class FakeBootstrapService:
+    def __init__(self) -> None:
+        self.tickers: list[str] | None = None
+
+    async def execute(self, *, tickers: list[str] | None = None):
+        self.tickers = tickers
+        return type(
+            "BootstrapResult",
+            (),
+            {"refreshed_tickers": len(tickers or []), "failed_tickers": []},
+        )()
+
+
+def test_bootstrap_scan_skips_initializing_tickers() -> None:
+    bars = FakeBarsRepository()
+    state_repository = FakeTickerBarsStateRepository([
+        _state(status="initializing", bootstrap_started_at=_dt(2026, 4, 21, 19, 55))
+    ])
+    uow = FakeUow(bars, state_repository)
+    bars_client = FakeBarsClient()
+    service = RunTickerBarsBootstrapService(
+        uow_factory=cast(SqlAlchemyUnitOfWorkFactory, FakeUowFactory(uow)),
+        bars_client=cast(MassiveBarsClient, bars_client),
+        calendar=UsStockCalendar(),
+        mode=MarketDataMode(delay_minutes=0),
+        now_provider=lambda: _dt(2026, 4, 21, 20, 0),
+    )
+
+    result = asyncio.run(service.execute())
+
+    assert result.total_tickers == 0
+    assert result.refreshed_tickers == 0
+    assert state_repository.failed_tickers == []
+    assert bars_client.fetch_calls == 0
+
+
+def test_bootstrap_scan_marks_timed_out_initializing_failed_before_retry() -> None:
+    bars = FakeBarsRepository()
+    state_repository = FakeTickerBarsStateRepository([
+        _state(status="initializing", bootstrap_started_at=_dt(2026, 4, 21, 19, 45))
+    ])
+    uow = FakeUow(bars, state_repository)
+    bars_client = FakeBarsClient()
+    service = RunTickerBarsBootstrapService(
+        uow_factory=cast(SqlAlchemyUnitOfWorkFactory, FakeUowFactory(uow)),
+        bars_client=cast(MassiveBarsClient, bars_client),
+        calendar=UsStockCalendar(),
+        mode=MarketDataMode(delay_minutes=0),
+        now_provider=lambda: _dt(2026, 4, 21, 20, 0),
+    )
+
+    result = asyncio.run(service.execute())
+
+    assert result.total_tickers == 1
+    assert result.refreshed_tickers == 1
+    assert state_repository.failed_tickers == ["AAPL"]
+    assert bars_client.fetch_calls == 2
+
+
+def test_historical_reconciliation_only_bootstraps_timed_out_initializing_tickers() -> None:
+    bars = FakeBarsRepository()
+    state_repository = FakeTickerBarsStateRepository(
+        [
+            _state(ticker="AAPL", status="initializing", bootstrap_started_at=_dt(2026, 4, 21, 19, 55)),
+            _state(ticker="MSFT", status="initializing", bootstrap_started_at=_dt(2026, 4, 21, 19, 45)),
+        ]
+    )
+    uow = FakeUow(bars, state_repository, FakeWatchlistRepository(["AAPL", "MSFT"]))
+    bars_client = FakeBarsClient()
+    bootstrap_service = FakeBootstrapService()
+    service = RunHistoricalBarsGapReconciliationService(
+        uow_factory=cast(SqlAlchemyUnitOfWorkFactory, FakeUowFactory(uow)),
+        bars_client=cast(MassiveBarsClient, bars_client),
+        calendar=UsStockCalendar(),
+        bootstrap_service=cast(RunTickerBarsBootstrapService, bootstrap_service),
+        mode=MarketDataMode(delay_minutes=0),
+        now_provider=lambda: _dt(2026, 4, 21, 20, 0),
+    )
+
+    result = asyncio.run(service.execute())
+
+    assert bootstrap_service.tickers == ["MSFT"]
+    assert bars_client.fetch_calls == 0
+    assert result.processed_tickers == 1
+
+
+def test_post_close_finalizer_skips_initializing_tickers() -> None:
+    bars = FakeBarsRepository()
+    state_repository = FakeTickerBarsStateRepository([
+        _state(status="initializing", bootstrap_started_at=_dt(2026, 4, 21, 20, 55))
+    ])
+    uow = FakeUow(bars, state_repository, FakeWatchlistRepository(["AAPL"]))
+    bars_client = FakeBarsClient()
+    service = RunPostCloseBarsFinalizerService(
+        uow_factory=cast(SqlAlchemyUnitOfWorkFactory, FakeUowFactory(uow)),
+        bars_client=cast(MassiveBarsClient, bars_client),
+        calendar=UsStockCalendar(),
+        mode=MarketDataMode(delay_minutes=0),
+        now_provider=lambda: _dt(2026, 4, 21, 21, 0),
+    )
+
+    result = asyncio.run(service.execute())
+
+    assert result.total_tickers == 1
+    assert result.refreshed_tickers == 0
+    assert bars_client.fetch_calls == 0
 
 
 def test_retention_cleanup_updates_state_bounds_after_deleting_old_rows() -> None:

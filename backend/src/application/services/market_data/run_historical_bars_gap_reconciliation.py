@@ -13,7 +13,7 @@ from application.services.market_data._bars_maintenance_support import (
 )
 from application.services.market_data.run_ticker_bars_bootstrap import RunTickerBarsBootstrapService
 from domain.entities import BarsMaintenanceResult, CanonicalBar, MarketDataMode
-from domain.rules import MARKET_BARS_1M_RETENTION_TRADING_DAYS
+from domain.rules import MARKET_BARS_1M_RETENTION_TRADING_DAYS, MARKET_BARS_INITIALIZING_TIMEOUT_MINUTES
 from infrastructure.calendar import UsStockCalendar
 from infrastructure.db.uow import SqlAlchemyUnitOfWorkFactory
 from infrastructure.external import MassiveBarsClient
@@ -44,6 +44,7 @@ class RunHistoricalBarsGapReconciliationService:
 
     async def execute(self) -> BarsMaintenanceResult:
         effective_now = self._now_provider().astimezone(UTC) - timedelta(minutes=self._mode.delay_minutes)
+        timeout_before = effective_now - timedelta(minutes=MARKET_BARS_INITIALIZING_TIMEOUT_MINUTES)
         anchor_day = self._calendar.previous_or_same_trading_day(self._calendar.to_market_date(effective_now))
         minute_days = self._calendar.previous_trading_days(anchor_day, MARKET_BARS_1M_RETENTION_TRADING_DAYS)
         minute_start_at = self._calendar.session_window(minute_days[0], "pre_market").start_at
@@ -54,8 +55,22 @@ class RunHistoricalBarsGapReconciliationService:
             tickers = await uow.watchlist.list_distinct_tickers()
             states = {state.ticker: state for state in await uow.ticker_bars_state.list_for_tickers(tickers=tickers)}
 
-        bootstrap_tickers = [ticker for ticker in tickers if states.get(ticker) is None or states[ticker].status != "ready"]
-        reconcile_tickers = [ticker for ticker in tickers if ticker not in bootstrap_tickers]
+        bootstrap_tickers: list[str] = []
+        reconcile_tickers: list[str] = []
+        for ticker in tickers:
+            state = states.get(ticker)
+            if state is None or state.status in {"pending", "failed", "degraded"}:
+                bootstrap_tickers.append(ticker)
+                continue
+            if (
+                state.status == "initializing"
+                and state.bootstrap_started_at is not None
+                and state.bootstrap_started_at <= timeout_before
+            ):
+                bootstrap_tickers.append(ticker)
+                continue
+            if state.status == "ready":
+                reconcile_tickers.append(ticker)
 
         processed_tickers = 0
         failed_tickers: list[str] = []
