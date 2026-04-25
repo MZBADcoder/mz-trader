@@ -152,6 +152,9 @@ class Container:
             calendar=self._calendar,
             bootstrap_service=self._run_ticker_bars_bootstrap_service,
             mode=self._market_data_mode,
+            max_provider_calls_per_ticker=(
+                settings.market_data_bars_gap_reconcile_max_provider_calls_per_ticker
+            ),
         )
         self._run_bars_retention_cleanup_service = RunBarsRetentionCleanupService(
             uow_factory=self._uow_factory,

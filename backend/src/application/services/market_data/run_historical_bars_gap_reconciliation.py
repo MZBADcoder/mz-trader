@@ -45,6 +45,7 @@ class RunHistoricalBarsGapReconciliationService:
         calendar: UsStockCalendar,
         bootstrap_service: RunTickerBarsBootstrapService,
         mode: MarketDataMode,
+        max_provider_calls_per_ticker: int = 8,
         now_provider: Callable[[], datetime] | None = None,
     ) -> None:
         self._uow_factory = uow_factory
@@ -52,6 +53,7 @@ class RunHistoricalBarsGapReconciliationService:
         self._calendar = calendar
         self._bootstrap_service = bootstrap_service
         self._mode = mode
+        self._max_provider_calls_per_ticker = max(1, max_provider_calls_per_ticker)
         self._now_provider = now_provider or (lambda: datetime.now(UTC))
 
     async def execute(self) -> BarsMaintenanceResult:
@@ -155,6 +157,11 @@ class RunHistoricalBarsGapReconciliationService:
             existing_rows=existing_daily_rows,
             start_day=daily_start_day,
             end_day=completed_daily_end_day,
+        )
+        minute_ranges, daily_ranges = self._apply_provider_call_budget(
+            ticker=ticker,
+            minute_ranges=minute_ranges,
+            daily_ranges=daily_ranges,
         )
 
         minute_rows: list[CanonicalBar] = []
@@ -331,3 +338,28 @@ class RunHistoricalBarsGapReconciliationService:
             previous = current
         ranges.append(_DayRange(start_day=range_start, end_day=previous))
         return ranges
+
+    def _apply_provider_call_budget(
+        self,
+        *,
+        ticker: str,
+        minute_ranges: list[_TimeRange],
+        daily_ranges: list[_DayRange],
+    ) -> tuple[list[_TimeRange], list[_DayRange]]:
+        total_ranges = len(minute_ranges) + len(daily_ranges)
+        if total_ranges <= self._max_provider_calls_per_ticker:
+            return minute_ranges, daily_ranges
+
+        minute_budget = min(len(minute_ranges), self._max_provider_calls_per_ticker)
+        daily_budget = self._max_provider_calls_per_ticker - minute_budget
+        logger.warning(
+            "historical bars gap reconciliation provider call budget reached",
+            extra={
+                "ticker": ticker,
+                "max_provider_calls_per_ticker": self._max_provider_calls_per_ticker,
+                "minute_ranges": len(minute_ranges),
+                "daily_ranges": len(daily_ranges),
+                "deferred_ranges": total_ranges - self._max_provider_calls_per_ticker,
+            },
+        )
+        return minute_ranges[:minute_budget], daily_ranges[:daily_budget]

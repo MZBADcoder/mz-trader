@@ -70,7 +70,7 @@ class RunTickerBarsBootstrapService:
         failed_tickers: list[str] = []
         for ticker in target_tickers:
             try:
-                await self._bootstrap_ticker(ticker=ticker, effective_now=effective_now)
+                did_bootstrap = await self._bootstrap_ticker(ticker=ticker, effective_now=effective_now)
             except Exception as exc:
                 logger.warning("ticker bars bootstrap failed", extra={"ticker": ticker})
                 async with self._uow_factory.build() as uow:
@@ -82,7 +82,8 @@ class RunTickerBarsBootstrapService:
                     await uow.commit()
                 failed_tickers.append(ticker)
                 continue
-            bootstrapped += 1
+            if did_bootstrap:
+                bootstrapped += 1
 
         return SnapshotCoordinatorRefreshResult(
             status="completed",
@@ -96,7 +97,7 @@ class RunTickerBarsBootstrapService:
             return True
         return state.bootstrap_started_at <= effective_now - timedelta(minutes=MARKET_BARS_INITIALIZING_TIMEOUT_MINUTES)
 
-    async def _bootstrap_ticker(self, *, ticker: str, effective_now: datetime) -> None:
+    async def _bootstrap_ticker(self, *, ticker: str, effective_now: datetime) -> bool:
         now_synced_at = self._now_provider().astimezone(UTC)
         anchor_day = self._calendar.previous_or_same_trading_day(self._calendar.to_market_date(effective_now))
         minute_days = self._calendar.previous_trading_days(anchor_day, MARKET_BARS_1M_RETENTION_TRADING_DAYS)
@@ -106,7 +107,13 @@ class RunTickerBarsBootstrapService:
         async with self._uow_factory.build() as uow:
             existing_state = await uow.ticker_bars_state.get_for_update(ticker=ticker)
             if existing_state is not None and existing_state.status == "ready":
-                return
+                return False
+            if (
+                existing_state is not None
+                and existing_state.status == "initializing"
+                and not self._initializing_timed_out(state=existing_state, effective_now=effective_now)
+            ):
+                return False
             await uow.ticker_bars_state.upsert(
                 build_initializing_state(ticker=ticker, now=now_synced_at, existing=existing_state)
             )
@@ -169,6 +176,7 @@ class RunTickerBarsBootstrapService:
                 )
             )
             await uow.commit()
+        return True
 
     def _to_daily_rows(self, *, ticker: str, provider_bars, synced_at: datetime) -> list[CanonicalBar]:
         rows: list[CanonicalBar] = []

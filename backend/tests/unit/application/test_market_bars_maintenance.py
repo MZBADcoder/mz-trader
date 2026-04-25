@@ -432,6 +432,29 @@ def test_bootstrap_scan_marks_timed_out_initializing_failed_before_retry() -> No
     assert bars_client.fetch_calls == 2
 
 
+def test_bootstrap_ticker_skips_fresh_initializing_when_called_directly() -> None:
+    bars = FakeBarsRepository()
+    state_repository = FakeTickerBarsStateRepository([
+        _state(status="initializing", bootstrap_started_at=_dt(2026, 4, 21, 19, 55))
+    ])
+    uow = FakeUow(bars, state_repository)
+    bars_client = FakeBarsClient()
+    service = RunTickerBarsBootstrapService(
+        uow_factory=cast(SqlAlchemyUnitOfWorkFactory, FakeUowFactory(uow)),
+        bars_client=cast(MassiveBarsClient, bars_client),
+        calendar=UsStockCalendar(),
+        mode=MarketDataMode(delay_minutes=0),
+        now_provider=lambda: _dt(2026, 4, 21, 20, 0),
+    )
+
+    result = asyncio.run(service.execute(tickers=["AAPL"]))
+
+    assert result.total_tickers == 1
+    assert result.refreshed_tickers == 0
+    assert bars_client.fetch_calls == 0
+    assert state_repository.upserted == []
+
+
 def test_historical_reconciliation_only_bootstraps_timed_out_initializing_tickers() -> None:
     bars = FakeBarsRepository()
     state_repository = FakeTickerBarsStateRepository(
@@ -551,6 +574,84 @@ def test_historical_reconciliation_fetches_only_missing_minute_gap() -> None:
     assert bars_client.calls[0]["to_value"] == str(int((missing_start + timedelta(minutes=1)).timestamp() * 1000))
     assert [row.bucket_start_at for row in bars.upserted_1m] == [missing_start]
     assert bars.upserted_1d == []
+
+
+def test_historical_reconciliation_caps_provider_calls_per_ticker() -> None:
+    bars = FakeBarsRepository()
+    calendar = UsStockCalendar()
+    trading_day = date(2026, 4, 21)
+    regular = calendar.regular_session_window(trading_day)
+    effective_now = regular.start_at + timedelta(minutes=7)
+    missing_starts = {
+        regular.start_at + timedelta(minutes=1),
+        regular.start_at + timedelta(minutes=3),
+        regular.start_at + timedelta(minutes=5),
+    }
+    bars.minute_rows = _historical_reconciliation_minute_rows(
+        calendar=calendar,
+        anchor_day=trading_day,
+        effective_now=effective_now,
+        omit=missing_starts,
+    )
+    bars.daily_rows = _historical_reconciliation_daily_rows(
+        calendar=calendar,
+        anchor_day=trading_day,
+        effective_now=effective_now,
+    )
+    state_repository = FakeTickerBarsStateRepository([_state()])
+    uow = FakeUow(bars, state_repository, FakeWatchlistRepository(["AAPL"]))
+    bars_client = FakeBarsClient()
+    bars_client.responses = [
+        [
+            ProviderBar(
+                time=regular.start_at + timedelta(minutes=1),
+                open=100.0,
+                high=101.0,
+                low=99.0,
+                close=100.5,
+                volume=10,
+                vw=100.4,
+                trade_count=2,
+                provider_updated_at=regular.start_at + timedelta(minutes=1),
+            )
+        ],
+        [
+            ProviderBar(
+                time=regular.start_at + timedelta(minutes=3),
+                open=100.0,
+                high=101.0,
+                low=99.0,
+                close=100.5,
+                volume=10,
+                vw=100.4,
+                trade_count=2,
+                provider_updated_at=regular.start_at + timedelta(minutes=3),
+            )
+        ],
+    ]
+    bootstrap_service = FakeBootstrapService()
+    service = RunHistoricalBarsGapReconciliationService(
+        uow_factory=cast(SqlAlchemyUnitOfWorkFactory, FakeUowFactory(uow)),
+        bars_client=cast(MassiveBarsClient, bars_client),
+        calendar=calendar,
+        bootstrap_service=cast(RunTickerBarsBootstrapService, bootstrap_service),
+        mode=MarketDataMode(delay_minutes=0),
+        max_provider_calls_per_ticker=2,
+        now_provider=lambda: effective_now,
+    )
+
+    result = asyncio.run(service.execute())
+
+    assert result.processed_tickers == 1
+    assert bars_client.fetch_calls == 2
+    assert [call["from_value"] for call in bars_client.calls] == [
+        str(int((regular.start_at + timedelta(minutes=1)).timestamp() * 1000)),
+        str(int((regular.start_at + timedelta(minutes=3)).timestamp() * 1000)),
+    ]
+    assert [row.bucket_start_at for row in bars.upserted_1m] == [
+        regular.start_at + timedelta(minutes=1),
+        regular.start_at + timedelta(minutes=3),
+    ]
 
 
 def test_post_close_finalizer_skips_initializing_tickers() -> None:

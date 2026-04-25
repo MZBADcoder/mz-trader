@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     market_data_bars_post_close_finalizer_hour_et: int = 17
     market_data_bars_post_close_finalizer_minute_et: int = 0
     market_data_bars_bootstrap_interval_seconds: int | None = None
+    market_data_bars_gap_reconcile_max_provider_calls_per_ticker: int = 8
     market_data_bars_gap_reconcile_hour_et: int = 2
     market_data_bars_gap_reconcile_minute_et: int = 0
     market_data_bars_retention_cleanup_hour_et: int = 3
@@ -91,12 +92,14 @@ class Settings(BaseSettings):
             return self.market_data_bars_current_day_refresh_interval_seconds
         return 60
 
+    @property
     def resolved_market_data_bars_bootstrap_interval_seconds(self) -> int:
         """Return the effective cadence for pending ticker bootstrap scans."""
         if self.market_data_bars_bootstrap_interval_seconds is not None:
             return self.market_data_bars_bootstrap_interval_seconds
         return 60
 
+    @property
     def resolved_celery_result_backend(self) -> str:
         """Return the configured Celery result backend."""
         return self.celery_result_backend or self.celery_broker_url
