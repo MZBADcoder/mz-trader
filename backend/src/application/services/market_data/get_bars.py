@@ -23,9 +23,7 @@ INTRADAY_RESOLUTION_MINUTES = {
     "60m": 60,
 }
 HIGHER_DEFAULT_COUNT_BACK = {"1D": 120, "1W": 104, "1M": 120, "1Q": 80}
-HIGHER_LOOKBACK_DAYS = {"1D": 1, "1W": 5, "1M": 23, "1Q": 66}
-
-
+HigherBucketKey = tuple[int, int] | tuple[int, int, int]
 class GetBarsService:
     """Resolve unified chart bars from canonical DB storage only."""
 
@@ -53,23 +51,29 @@ class GetBarsService:
     async def _execute_intraday_source(self, *, query: BarsQuery, effective_now: datetime) -> BarsResult:
         anchor = min(query.to_time or effective_now, effective_now)
         windows, calendar_shifted = self._resolve_intraday_windows(query=query, anchor=anchor)
-        self._ensure_estimated_rows(windows=windows, resolution=query.resolution)
+        self._ensure_estimated_rows(
+            query=query,
+            windows=windows,
+            effective_now=effective_now,
+        )
 
         async with self._uow_factory.build() as uow:
             state = await uow.ticker_bars_state.get(ticker=query.ticker)
             db_rows: list[CanonicalBar] = []
             for window in windows:
+                start_at, end_at = self._resolve_intraday_window_bounds(
+                    query=query,
+                    window=window,
+                    effective_now=effective_now,
+                )
+                if start_at >= end_at:
+                    continue
                 db_rows.extend(
                     await uow.bars.list_1m(
                         ticker=query.ticker,
                         adjustment=query.adjustment,
-                        start_at=window.start_at,
-                        end_at=min(
-                            window.end_at,
-                            effective_now
-                            if window.trading_day == self._calendar.to_market_date(effective_now)
-                            else window.end_at,
-                        ),
+                        start_at=start_at,
+                        end_at=end_at,
                         session_kind=query.session,
                     )
                 )
@@ -81,6 +85,7 @@ class GetBarsService:
                 effective_now=effective_now,
             )
 
+        bars = self._filter_explicit_range_bars(query=query, bars=bars)
         if query.from_time is None:
             bars = self._apply_latest_tail_slice(query=query, bars=bars)
 
@@ -120,18 +125,23 @@ class GetBarsService:
         anchor = min(query.to_time or effective_now, effective_now)
         anchor_day = self._calendar.previous_or_same_trading_day(self._calendar.to_market_date(anchor))
         count_back = query.count_back or HIGHER_DEFAULT_COUNT_BACK[query.resolution]
-        lookback_days = count_back * HIGHER_LOOKBACK_DAYS[query.resolution]
         if query.from_time is not None:
-            start_day = self._calendar.previous_or_same_trading_day(self._calendar.to_market_date(query.from_time))
-            end_day = self._calendar.previous_or_same_trading_day(self._calendar.to_market_date(query.to_time or anchor))
+            start_day, end_day = self._resolve_explicit_daily_range(query=query)
         else:
-            start_day = anchor_day - timedelta(days=lookback_days)
-            end_day = anchor_day
+            start_day, end_day = self._resolve_latest_daily_range(
+                anchor_day=anchor_day,
+                resolution=query.resolution,
+                count_back=count_back,
+            )
 
         async with self._uow_factory.build() as uow:
             state = await uow.ticker_bars_state.get(ticker=query.ticker)
             completed_end_day = end_day
-            current_partial = self._build_current_regular_day_window(anchor=anchor, query=query)
+            current_partial = self._build_current_regular_day_window(
+                anchor=anchor,
+                effective_now=effective_now,
+                query=query,
+            )
             if current_partial is not None and current_partial.trading_day <= completed_end_day:
                 completed_end_day = self._calendar.previous_trading_day(current_partial.trading_day)
 
@@ -157,6 +167,7 @@ class GetBarsService:
         if current_day_bar is not None:
             contributions.append(current_day_bar)
         bars = self._build_higher_bars(query=query, contributions=contributions)
+        bars = self._filter_explicit_range_bars(query=query, bars=bars)
         if query.from_time is None:
             bars = self._apply_latest_tail_slice(query=query, bars=bars)
 
@@ -226,14 +237,17 @@ class GetBarsService:
         output: list[Bar] = []
 
         for window in windows:
-            upper_bound = (
-                min(window.end_at, query.to_time)
-                if query.from_time is not None and query.to_time is not None
-                else effective_now
+            lower_bound, upper_bound = self._resolve_intraday_window_bounds(
+                query=query,
+                window=window,
+                effective_now=effective_now,
             )
+            if lower_bound >= upper_bound:
+                continue
             expected_starts = self._expected_bucket_starts(
                 resolution=query.resolution,
                 window=window,
+                lower_bound=lower_bound,
                 upper_bound=upper_bound,
                 include_partial=query.include_partial,
             )
@@ -331,9 +345,18 @@ class GetBarsService:
             effective_now=effective_now,
         )
 
-    def _build_current_regular_day_window(self, *, anchor: datetime, query: BarsQuery) -> SessionWindow | None:
+    def _build_current_regular_day_window(
+        self,
+        *,
+        anchor: datetime,
+        effective_now: datetime,
+        query: BarsQuery,
+    ) -> SessionWindow | None:
+        effective_day = self._current_trading_day(effective_now=effective_now)
+        if effective_day is None:
+            return None
         anchor_day = self._calendar.to_market_date(anchor)
-        if not self._calendar.is_trading_day(anchor_day):
+        if anchor_day != effective_day:
             return None
         regular_window = self._calendar.regular_session_window(anchor_day)
         if anchor <= regular_window.start_at:
@@ -348,33 +371,24 @@ class GetBarsService:
         if query.resolution == "1D":
             return [self._to_response_bar(item) for item in contributions]
 
-        grouped: dict[tuple[int, int] | tuple[int, int, int], list[CanonicalBar]] = defaultdict(list)
+        grouped: dict[HigherBucketKey, list[CanonicalBar]] = defaultdict(list)
         for item in contributions:
-            eastern_day = item.trading_day
-            key: tuple[int, int] | tuple[int, int, int]
-            if query.resolution == "1W":
-                week_start = eastern_day - timedelta(days=eastern_day.weekday())
-                key = (week_start.year, week_start.month, week_start.day)
-            elif query.resolution == "1M":
-                key = (eastern_day.year, eastern_day.month)
-            else:
-                quarter = ceil(eastern_day.month / 3)
-                key = (eastern_day.year, quarter)
-            grouped[key].append(item)
+            grouped[self._higher_bucket_key(resolution=query.resolution, trading_day=item.trading_day)].append(item)
 
         bars: list[Bar] = []
         for _, children in sorted(grouped.items(), key=lambda item: item[1][0].bucket_start_at):
+            ordered_children = sorted(children, key=lambda child: child.bucket_start_at)
             bars.append(
                 Bar(
-                    time=children[0].bucket_start_at,
-                    open=children[0].open,
-                    high=max(child.high for child in children),
-                    low=min(child.low for child in children),
-                    close=children[-1].close,
-                    volume=sum(child.volume for child in children),
-                    vw=self._weighted_average(children),
-                    trade_count=sum(child.trade_count for child in children),
-                    is_final=all(child.is_final for child in children),
+                    time=ordered_children[0].bucket_start_at,
+                    open=ordered_children[0].open,
+                    high=max(child.high for child in ordered_children),
+                    low=min(child.low for child in ordered_children),
+                    close=ordered_children[-1].close,
+                    volume=sum(child.volume for child in ordered_children),
+                    vw=self._weighted_average(ordered_children),
+                    trade_count=sum(child.trade_count for child in ordered_children),
+                    is_final=all(child.is_final for child in ordered_children),
                     is_synthetic=False,
                 )
             )
@@ -385,24 +399,29 @@ class GetBarsService:
         *,
         resolution: str,
         window: SessionWindow,
+        lower_bound: datetime,
         upper_bound: datetime,
         include_partial: bool,
     ) -> list[datetime]:
         if resolution == "1D":
             if upper_bound <= window.start_at:
                 return []
+            if window.start_at < lower_bound:
+                return []
             if not include_partial and upper_bound < window.end_at:
                 return []
             return [window.start_at]
 
         minutes = INTRADAY_RESOLUTION_MINUTES[resolution]
-        capped_upper_bound = min(window.end_at, upper_bound if include_partial else window.end_at)
+        capped_upper_bound = min(window.end_at, upper_bound)
         if capped_upper_bound <= window.start_at:
             return []
         starts: list[datetime] = []
         current = window.start_at
         while current < capped_upper_bound:
-            starts.append(current)
+            bucket_end = min(current + timedelta(minutes=minutes), window.end_at)
+            if current >= lower_bound and (include_partial or bucket_end <= capped_upper_bound):
+                starts.append(current)
             current += timedelta(minutes=minutes)
         return starts
 
@@ -549,14 +568,31 @@ class GetBarsService:
             return bars
         return bars[-count_back:]
 
-    def _ensure_estimated_rows(self, *, windows: list[SessionWindow], resolution: str) -> None:
-        if resolution == "1D":
-            estimated = len(windows)
-        else:
-            estimated = 0
-            minutes = INTRADAY_RESOLUTION_MINUTES[resolution]
-            for window in windows:
-                estimated += max(1, int((window.end_at - window.start_at).total_seconds() // 60 // minutes) + 1)
+    def _ensure_estimated_rows(
+        self,
+        *,
+        query: BarsQuery,
+        windows: list[SessionWindow],
+        effective_now: datetime,
+    ) -> None:
+        estimated = 0
+        for window in windows:
+            lower_bound, upper_bound = self._resolve_intraday_window_bounds(
+                query=query,
+                window=window,
+                effective_now=effective_now,
+            )
+            if lower_bound >= upper_bound:
+                continue
+            estimated += len(
+                self._expected_bucket_starts(
+                    resolution=query.resolution,
+                    window=window,
+                    lower_bound=lower_bound,
+                    upper_bound=upper_bound,
+                    include_partial=query.include_partial,
+                )
+            )
         if estimated > MARKET_BARS_MAX_ESTIMATED_OUTPUT_ROWS:
             raise MarketBarsRangeTooLargeError()
 
@@ -578,3 +614,92 @@ class GetBarsService:
         if state is None or query.from_time is None or state.earliest_1d_trading_day is None:
             return False
         return self._calendar.to_market_date(query.from_time) < state.earliest_1d_trading_day
+
+    def _resolve_intraday_window_bounds(
+        self,
+        *,
+        query: BarsQuery,
+        window: SessionWindow,
+        effective_now: datetime,
+    ) -> tuple[datetime, datetime]:
+        lower_bound = window.start_at
+        upper_bound = window.end_at
+        if query.from_time is not None and query.to_time is not None:
+            lower_bound = max(lower_bound, query.from_time)
+            upper_bound = min(upper_bound, query.to_time)
+        if window.trading_day == self._calendar.to_market_date(effective_now):
+            upper_bound = min(upper_bound, effective_now)
+        return lower_bound, upper_bound
+
+    def _filter_explicit_range_bars(self, *, query: BarsQuery, bars: list[Bar]) -> list[Bar]:
+        if query.from_time is None or query.to_time is None:
+            return bars
+        return [bar for bar in bars if query.from_time <= bar.time < query.to_time]
+
+    def _resolve_explicit_daily_range(self, *, query: BarsQuery) -> tuple[date, date]:
+        assert query.from_time is not None
+        assert query.to_time is not None
+        start_day = self._calendar.previous_or_same_trading_day(self._calendar.to_market_date(query.from_time))
+        end_day = self._calendar.previous_or_same_trading_day(self._calendar.to_market_date(query.to_time))
+        if query.resolution == "1D":
+            return start_day, end_day
+        return (
+            self._higher_bucket_start_day(resolution=query.resolution, trading_day=start_day),
+            self._higher_bucket_end_day(resolution=query.resolution, trading_day=end_day),
+        )
+
+    def _resolve_latest_daily_range(
+        self,
+        *,
+        anchor_day: date,
+        resolution: str,
+        count_back: int,
+    ) -> tuple[date, date]:
+        if resolution == "1D":
+            return self._calendar.previous_trading_days(anchor_day, max(count_back, 1))[0], anchor_day
+
+        bucket_day = anchor_day
+        for _ in range(max(count_back, 1)):
+            bucket_start_day = self._higher_bucket_start_day(resolution=resolution, trading_day=bucket_day)
+            bucket_day = self._calendar.previous_trading_day(bucket_start_day)
+        return self._higher_bucket_start_day(resolution=resolution, trading_day=bucket_day), anchor_day
+
+    def _higher_bucket_key(self, *, resolution: str, trading_day: date) -> HigherBucketKey:
+        if resolution == "1W":
+            week_start = trading_day - timedelta(days=trading_day.weekday())
+            return (week_start.year, week_start.month, week_start.day)
+        if resolution == "1M":
+            return (trading_day.year, trading_day.month)
+        quarter = ceil(trading_day.month / 3)
+        return (trading_day.year, quarter)
+
+    def _higher_bucket_start_day(self, *, resolution: str, trading_day: date) -> date:
+        if resolution == "1W":
+            calendar_week_start = trading_day - timedelta(days=trading_day.weekday())
+            return self._calendar.next_trading_day(calendar_week_start - timedelta(days=1))
+        if resolution == "1M":
+            return self._calendar.first_trading_day_of_month(trading_day.year, trading_day.month)
+        quarter = ceil(trading_day.month / 3)
+        return self._calendar.first_trading_day_of_quarter(trading_day.year, quarter)
+
+    def _higher_bucket_end_day(self, *, resolution: str, trading_day: date) -> date:
+        if resolution == "1W":
+            next_period_start = trading_day - timedelta(days=trading_day.weekday()) + timedelta(days=7)
+        elif resolution == "1M":
+            if trading_day.month == 12:
+                next_period_start = date(trading_day.year + 1, 1, 1)
+            else:
+                next_period_start = date(trading_day.year, trading_day.month + 1, 1)
+        else:
+            quarter = ceil(trading_day.month / 3)
+            if quarter == 4:
+                next_period_start = date(trading_day.year + 1, 1, 1)
+            else:
+                next_period_start = date(trading_day.year, quarter * 3 + 1, 1)
+        return self._calendar.previous_trading_day(next_period_start)
+
+    def _current_trading_day(self, *, effective_now: datetime) -> date | None:
+        market_day = self._calendar.to_market_date(effective_now)
+        if not self._calendar.is_trading_day(market_day):
+            return None
+        return market_day

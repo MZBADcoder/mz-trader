@@ -48,9 +48,12 @@ class RunBarsRetentionCleanupService:
                 statuses=sorted(TICKER_BARS_READINESS_STATES)
             )
             for state in states:
+                current_state = await uow.ticker_bars_state.get_for_update(ticker=state.ticker)
+                if current_state is None or current_state.status not in TICKER_BARS_READINESS_STATES:
+                    continue
                 await uow.ticker_bars_state.upsert(
                     clamp_state_to_retention(
-                        state=state,
+                        state=current_state,
                         minute_threshold_day=minute_threshold_day,
                         daily_threshold_day=daily_threshold_day,
                         now=effective_now,

@@ -29,6 +29,15 @@ class MarketTickerBarsStateRepository:
         model = await self._session.get(MarketTickerBarsStateModel, ticker)
         return to_market_ticker_bars_state_entity(model) if model is not None else None
 
+    async def get_for_update(self, *, ticker: str) -> TickerBarsState | None:
+        stmt: Select[tuple[MarketTickerBarsStateModel]] = (
+            select(MarketTickerBarsStateModel)
+            .where(MarketTickerBarsStateModel.ticker == ticker)
+            .with_for_update()
+        )
+        model = await self._session.scalar(stmt)
+        return to_market_ticker_bars_state_entity(model) if model is not None else None
+
     async def list_for_tickers(self, *, tickers: list[str]) -> list[TickerBarsState]:
         if not tickers:
             return []
@@ -94,7 +103,7 @@ class MarketTickerBarsStateRepository:
         await self._session.execute(stmt)
 
     async def ensure_pending(self, *, ticker: str, requested_at: datetime) -> None:
-        existing = await self.get(ticker=ticker)
+        existing = await self.get_for_update(ticker=ticker)
         if existing is not None:
             if existing.status == "ready":
                 return
@@ -140,11 +149,13 @@ class MarketTickerBarsStateRepository:
         await self.upsert(pending)
 
     async def mark_failed(self, *, ticker: str, failed_at: datetime, error_message: str) -> None:
-        existing = await self.get(ticker=ticker)
+        existing = await self.get_for_update(ticker=ticker)
         if existing is None:
             await self.ensure_pending(ticker=ticker, requested_at=failed_at)
-            existing = await self.get(ticker=ticker)
+            existing = await self.get_for_update(ticker=ticker)
             assert existing is not None
+        if self._has_newer_ready_success(existing=existing, at=failed_at):
+            return
         failed = TickerBarsState(
             ticker=ticker,
             status="failed",
@@ -166,11 +177,13 @@ class MarketTickerBarsStateRepository:
         await self.upsert(failed)
 
     async def mark_degraded(self, *, ticker: str, degraded_at: datetime, error_message: str) -> None:
-        existing = await self.get(ticker=ticker)
+        existing = await self.get_for_update(ticker=ticker)
         if existing is None:
             await self.ensure_pending(ticker=ticker, requested_at=degraded_at)
-            existing = await self.get(ticker=ticker)
+            existing = await self.get_for_update(ticker=ticker)
             assert existing is not None
+        if self._has_newer_ready_success(existing=existing, at=degraded_at):
+            return
         degraded = TickerBarsState(
             ticker=ticker,
             status="degraded",
@@ -190,3 +203,17 @@ class MarketTickerBarsStateRepository:
             updated_at=degraded_at,
         )
         await self.upsert(degraded)
+
+    def _has_newer_ready_success(self, *, existing: TickerBarsState, at: datetime) -> bool:
+        if existing.status != "ready":
+            return False
+        success_at = max(
+            value
+            for value in (
+                existing.bootstrap_finished_at,
+                existing.last_reconciled_at,
+                existing.updated_at,
+            )
+            if value is not None
+        )
+        return success_at >= _ensure_utc(at)

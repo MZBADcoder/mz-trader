@@ -118,7 +118,7 @@ class RunHistoricalBarsGapReconciliationService:
             multiplier=1,
             timespan="day",
             from_value=daily_start_day.isoformat(),
-            to_value=anchor_day.isoformat(),
+            to_value=self._completed_daily_end_day(anchor_day=anchor_day, effective_now=effective_now).isoformat(),
             adjusted=True,
         )
         daily_rows = self._to_daily_rows(ticker=ticker, provider_bars=daily_provider_bars, synced_at=synced_at)
@@ -127,7 +127,7 @@ class RunHistoricalBarsGapReconciliationService:
                 await uow.bars.upsert_1m(minute_rows)
             if daily_rows:
                 await uow.bars.upsert_1d(daily_rows)
-            existing_state = await uow.ticker_bars_state.get(ticker=ticker)
+            existing_state = await uow.ticker_bars_state.get_for_update(ticker=ticker)
             await uow.ticker_bars_state.upsert(
                 build_ready_state(
                     ticker=ticker,
@@ -165,3 +165,9 @@ class RunHistoricalBarsGapReconciliationService:
                 )
             )
         return rows
+
+    def _completed_daily_end_day(self, *, anchor_day, effective_now: datetime):
+        market_day = self._calendar.to_market_date(effective_now)
+        if self._calendar.is_trading_day(market_day) and anchor_day == market_day:
+            return self._calendar.previous_trading_day(anchor_day)
+        return anchor_day

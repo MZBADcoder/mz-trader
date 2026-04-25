@@ -402,11 +402,16 @@ anchor_time = min(request.to or effective_now, effective_now)
 - `data_source`
   - MVP 固定为 `db`
 - `partial_range`
-  - 请求区间未能完整满足时为 `true`
+  - MVP 阶段用于表达“请求左边界或已检测到的中间区间不能完整满足”
   - 典型场景：
-    - 后台任务尚未补齐相关 gap
     - 数据超出本地最早已知历史边界
+    - backend 在有效查询区间内检测到 expected bucket / trading day 缺口
     - 当前请求被 backend 主动裁剪为较小有效区间后仍返回成功
+  - MVP 阶段不承诺 latest-tail freshness：
+    - latest mode 若后台刷新尚未覆盖到最新 `anchor_time`
+    - 只返回当前 DB 中已知可用结果
+    - 不仅因为最新尾部数据暂缺就把 `partial_range` 置为 `true`
+  - latest-tail stale / refresh miss 优先通过后台任务重试、`readiness=degraded`、日志与后续 reconciliation 表达
 - `readiness`
   - `pending|initializing|ready|degraded|failed`
   - 反映该 ticker 的 backend bars 准备状态
@@ -1579,9 +1584,12 @@ initializing timeout
 请求路径：
 
 - 不主动 repair
-- 若当前 DB 中缺数据
+- 若当前 DB 在请求左边界或已检测到的中间区间缺数据
   - 返回已知可用结果
   - `partial_range=true`
+- 若只是 latest-tail 尚未刷新到最新 `anchor_time`
+  - 返回当前 DB 中已知可用结果
+  - MVP 阶段不要求 `partial_range=true`
 
 建议在 `meta` 中增加：
 

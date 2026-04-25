@@ -7,7 +7,6 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Callable
 
 from application.services.market_data._bars_maintenance_support import (
-    aggregate_daily_row,
     build_canonical_1m_rows,
     build_initializing_state,
     build_ready_state,
@@ -84,18 +83,24 @@ class RunTickerBarsBootstrapService:
         daily_start_day = self._subtract_years(anchor_day, MARKET_BARS_1D_RETENTION_YEARS)
 
         async with self._uow_factory.build() as uow:
-            existing_state = await uow.ticker_bars_state.get(ticker=ticker)
+            existing_state = await uow.ticker_bars_state.get_for_update(ticker=ticker)
+            if existing_state is not None and existing_state.status == "ready":
+                return
             await uow.ticker_bars_state.upsert(
                 build_initializing_state(ticker=ticker, now=now_synced_at, existing=existing_state)
             )
             await uow.commit()
 
+        completed_daily_end_day = anchor_day
+        current_trading_day = self._current_trading_day(effective_now=effective_now)
+        if current_trading_day is not None and anchor_day == current_trading_day:
+            completed_daily_end_day = self._calendar.previous_trading_day(anchor_day)
         daily_provider_bars = await self._bars_client.fetch_range(
             ticker=ticker,
             multiplier=1,
             timespan="day",
             from_value=daily_start_day.isoformat(),
-            to_value=anchor_day.isoformat(),
+            to_value=completed_daily_end_day.isoformat(),
             adjusted=True,
         )
         daily_rows = self._to_daily_rows(
@@ -123,37 +128,19 @@ class RunTickerBarsBootstrapService:
             synced_at=now_synced_at,
         )
 
-        if self._calendar.is_trading_day(anchor_day):
-            regular_window = self._calendar.regular_session_window(anchor_day)
-            regular_rows = [
-                row
-                for row in minute_rows
-                if row.trading_day == anchor_day and row.session_kind == "regular" and row.bucket_start_at < min(regular_window.end_at, effective_now)
-            ]
-            if regular_rows and not any(row.trading_day == anchor_day for row in daily_rows):
-                daily_rows.append(
-                    aggregate_daily_row(
-                        ticker=ticker,
-                        adjustment="split_adjusted",
-                        trading_day=anchor_day,
-                        bucket_start_at=regular_window.start_at,
-                        rows=regular_rows,
-                        synced_at=now_synced_at,
-                    )
-                )
-
         async with self._uow_factory.build() as uow:
             if daily_rows:
                 await uow.bars.upsert_1d(daily_rows)
             if minute_rows:
                 await uow.bars.upsert_1m(minute_rows)
+            current_state = await uow.ticker_bars_state.get_for_update(ticker=ticker)
             await uow.ticker_bars_state.upsert(
                 build_ready_state(
                     ticker=ticker,
                     now=now_synced_at,
                     minute_rows=minute_rows,
                     daily_rows=daily_rows,
-                    existing=await uow.ticker_bars_state.get(ticker=ticker),
+                    existing=current_state,
                 )
             )
             await uow.commit()
@@ -196,3 +183,9 @@ class RunTickerBarsBootstrapService:
             return value.replace(year=value.year - years)
         except ValueError:
             return value.replace(month=2, day=28, year=value.year - years)
+
+    def _current_trading_day(self, *, effective_now: datetime) -> date | None:
+        market_day = self._calendar.to_market_date(effective_now)
+        if not self._calendar.is_trading_day(market_day):
+            return None
+        return market_day

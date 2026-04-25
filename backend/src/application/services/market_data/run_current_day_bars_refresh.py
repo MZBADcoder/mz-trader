@@ -79,6 +79,13 @@ class RunCurrentDayBarsRefreshService:
                 )
             except Exception:
                 logger.warning("current-day bars refresh failed", extra={"ticker": ticker})
+                async with self._uow_factory.build() as uow:
+                    await uow.ticker_bars_state.mark_degraded(
+                        ticker=ticker,
+                        degraded_at=self._now_provider().astimezone(UTC),
+                        error_message="current-day bars refresh failed",
+                    )
+                    await uow.commit()
                 failed_tickers.append(ticker)
                 continue
 
@@ -95,7 +102,7 @@ class RunCurrentDayBarsRefreshService:
                 continue
             async with self._uow_factory.build() as uow:
                 await uow.bars.upsert_1m(canonical_rows)
-                existing_state = await uow.ticker_bars_state.get(ticker=ticker)
+                existing_state = await uow.ticker_bars_state.get_for_update(ticker=ticker)
                 await uow.ticker_bars_state.upsert(
                     build_ready_state(
                         ticker=ticker,

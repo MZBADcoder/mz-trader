@@ -162,6 +162,12 @@ class FakeTickerBarsStateRepository:
     async def list_by_statuses(self, *, statuses: list[str]) -> list[TickerBarsState]:
         return [state for state in self._states if state.status in statuses]
 
+    async def get_for_update(self, *, ticker: str) -> TickerBarsState | None:
+        for state in self._states:
+            if state.ticker == ticker:
+                return state
+        return None
+
     async def upsert(self, state: TickerBarsState) -> None:
         self.upserted.append(state)
 
