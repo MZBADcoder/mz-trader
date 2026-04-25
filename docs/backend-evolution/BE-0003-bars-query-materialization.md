@@ -1383,8 +1383,9 @@ select tracked tickers
 
 触发时机：
 
-- regular close 之后的安全延迟窗口
-- 建议：close 后 `2-5` 分钟启动首轮
+- 每个 trading day 在 `17:00 ET` 运行一次
+- 正常交易日约为 regular close 后 `1 hour`
+- 若 finalizer 错过或失败，由次日 `historical-bars-gap-reconciliation` 补 regular gaps
 
 执行流程：
 
@@ -1676,7 +1677,7 @@ initializing timeout
 - current-day `1m` refresher：
   - `60s`
 - post-close finalizer：
-  - close 后 `2-5` 分钟首轮
+  - 每天 `17:00 ET` 运行一次
 - historical reconciler：
   - 每天 `02:00 ET` 运行一次
   - 运行窗口位于 after-hours 结束与 pre-market 开始之间

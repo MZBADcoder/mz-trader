@@ -32,7 +32,10 @@ celery_app.conf.update(
         },
         "post-close-bars-finalizer": {
             "task": "worker.tasks.bar_refresh.run_post_close_bars_finalizer",
-            "schedule": settings.resolved_market_data_bars_post_close_finalizer_interval_seconds,
+            "schedule": crontab(
+                minute=settings.market_data_bars_post_close_finalizer_minute_et,
+                hour=settings.market_data_bars_post_close_finalizer_hour_et,
+            ),
         },
         "ticker-bars-bootstrap": {
             "task": "worker.tasks.bar_refresh.run_ticker_bars_bootstrap",
