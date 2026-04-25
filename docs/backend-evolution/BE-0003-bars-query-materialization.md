@@ -1469,7 +1469,7 @@ MVP 保留策略：
 执行规则：
 
 ```text
-daily cleanup
+daily cleanup at 03:00 ET
   -> compute oldest retained trading day for regular 1m
   -> delete all 1m rows older than regular threshold
   -> compute latest retained trading day for extended-session 1m
@@ -1686,6 +1686,8 @@ initializing timeout
   - 最近 `10` 个 trading days
 - pre/after `1m` retention：
   - 最新 `1` 个 trading day
+- retention cleanup：
+  - 每天 `03:00 ET` 运行一次
 - `1d` retention：
   - 最近 `10` years
 

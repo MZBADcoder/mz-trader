@@ -47,7 +47,10 @@ celery_app.conf.update(
         },
         "bars-retention-cleanup": {
             "task": "worker.tasks.bar_refresh.run_bars_retention_cleanup",
-            "schedule": settings.resolved_market_data_bars_retention_cleanup_interval_seconds,
+            "schedule": crontab(
+                minute=settings.market_data_bars_retention_cleanup_minute_et,
+                hour=settings.market_data_bars_retention_cleanup_hour_et,
+            ),
         },
     },
 )

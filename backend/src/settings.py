@@ -43,7 +43,8 @@ class Settings(BaseSettings):
     market_data_bars_bootstrap_interval_seconds: int | None = None
     market_data_bars_gap_reconcile_hour_et: int = 2
     market_data_bars_gap_reconcile_minute_et: int = 0
-    market_data_bars_retention_cleanup_interval_seconds: int | None = None
+    market_data_bars_retention_cleanup_hour_et: int = 3
+    market_data_bars_retention_cleanup_minute_et: int = 0
 
     log_level: str = "INFO"
     log_dir: Path = Field(default=Path("var/log"))
@@ -103,14 +104,6 @@ class Settings(BaseSettings):
             return self.market_data_bars_bootstrap_interval_seconds
         return 60
 
-    @property
-    def resolved_market_data_bars_retention_cleanup_interval_seconds(self) -> int:
-        """Return the effective cadence for retention cleanup."""
-        if self.market_data_bars_retention_cleanup_interval_seconds is not None:
-            return self.market_data_bars_retention_cleanup_interval_seconds
-        return 86400
-
-    @property
     def resolved_celery_result_backend(self) -> str:
         """Return the configured Celery result backend."""
         return self.celery_result_backend or self.celery_broker_url
