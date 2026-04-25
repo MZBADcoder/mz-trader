@@ -9,6 +9,7 @@ from typing import cast
 from application.services.market_data._bars_maintenance_support import (
     build_ready_state,
     clamp_state_to_retention,
+    retain_latest_extended_session_rows,
 )
 from application.services.market_data.run_bars_retention_cleanup import RunBarsRetentionCleanupService
 from domain.entities import CanonicalBar, MarketDataMode, TickerBarsState
@@ -44,14 +45,19 @@ def _state(**overrides) -> TickerBarsState:
     return baseline
 
 
-def _canonical_1m(*, trading_day: date, bucket_start_at: datetime) -> CanonicalBar:
+def _canonical_1m(
+    *,
+    trading_day: date,
+    bucket_start_at: datetime,
+    session_kind: str = "regular",
+) -> CanonicalBar:
     return CanonicalBar(
         ticker="AAPL",
         adjustment="split_adjusted",
         granularity="1m",
         bucket_start_at=bucket_start_at,
         trading_day=trading_day,
-        session_kind="regular",
+        session_kind=session_kind,
         open=100.0,
         high=101.0,
         low=99.0,
@@ -140,14 +146,60 @@ def test_clamp_state_to_retention_advances_or_clears_stale_bounds() -> None:
     assert expired.latest_1d_trading_day is None
 
 
+def test_retain_latest_extended_session_rows_keeps_historical_regular_only() -> None:
+    rows = [
+        _canonical_1m(
+            trading_day=date(2026, 4, 20),
+            bucket_start_at=_dt(2026, 4, 20, 12, 0),
+            session_kind="pre_market",
+        ),
+        _canonical_1m(
+            trading_day=date(2026, 4, 20),
+            bucket_start_at=_dt(2026, 4, 20, 14, 0),
+            session_kind="regular",
+        ),
+        _canonical_1m(
+            trading_day=date(2026, 4, 20),
+            bucket_start_at=_dt(2026, 4, 20, 21, 0),
+            session_kind="after_hours",
+        ),
+        _canonical_1m(
+            trading_day=date(2026, 4, 21),
+            bucket_start_at=_dt(2026, 4, 21, 12, 0),
+            session_kind="pre_market",
+        ),
+        _canonical_1m(
+            trading_day=date(2026, 4, 21),
+            bucket_start_at=_dt(2026, 4, 21, 14, 0),
+            session_kind="regular",
+        ),
+    ]
+
+    retained = retain_latest_extended_session_rows(
+        rows=rows,
+        latest_extended_trading_day=date(2026, 4, 21),
+    )
+
+    assert [(row.trading_day, row.session_kind) for row in retained] == [
+        (date(2026, 4, 20), "regular"),
+        (date(2026, 4, 21), "pre_market"),
+        (date(2026, 4, 21), "regular"),
+    ]
+
+
 class FakeBarsRepository:
     def __init__(self) -> None:
-        self.deleted_1m_threshold: date | None = None
+        self.deleted_1m_calls: list[tuple[date, list[str] | None]] = []
         self.deleted_1d_threshold: date | None = None
 
-    async def delete_1m_before(self, *, threshold_day: date) -> int:
-        self.deleted_1m_threshold = threshold_day
-        return 12
+    async def delete_1m_before(
+        self,
+        *,
+        threshold_day: date,
+        session_kinds: list[str] | None = None,
+    ) -> int:
+        self.deleted_1m_calls.append((threshold_day, session_kinds))
+        return 12 if session_kinds is None else 4
 
     async def delete_1d_before(self, *, threshold_day: date) -> int:
         self.deleted_1d_threshold = threshold_day
@@ -209,9 +261,12 @@ def test_retention_cleanup_updates_state_bounds_after_deleting_old_rows() -> Non
 
     result = asyncio.run(service.execute())
 
-    assert result.deleted_1m_rows == 12
+    assert result.deleted_1m_rows == 16
     assert result.deleted_1d_rows == 3
-    assert bars.deleted_1m_threshold == date(2026, 4, 9)
+    assert bars.deleted_1m_calls == [
+        (date(2026, 4, 9), None),
+        (date(2026, 4, 21), ["after_hours", "pre_market"]),
+    ]
     assert bars.deleted_1d_threshold == date(2016, 4, 21)
     assert uow.committed is True
     assert len(state_repository.upserted) == 1

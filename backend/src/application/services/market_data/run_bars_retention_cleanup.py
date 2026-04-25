@@ -8,6 +8,8 @@ from typing import Callable
 from application.services.market_data._bars_maintenance_support import clamp_state_to_retention
 from domain.entities import BarsMaintenanceResult, MarketDataMode
 from domain.rules import (
+    MARKET_BARS_EXTENDED_1M_RETENTION_TRADING_DAYS,
+    MARKET_BARS_EXTENDED_SESSION_KINDS,
     MARKET_BARS_1D_RETENTION_YEARS,
     MARKET_BARS_1M_RETENTION_TRADING_DAYS,
     TICKER_BARS_READINESS_STATES,
@@ -39,10 +41,20 @@ class RunBarsRetentionCleanupService:
             anchor_day,
             MARKET_BARS_1M_RETENTION_TRADING_DAYS,
         )[0]
+        extended_minute_threshold_day = anchor_day
+        if MARKET_BARS_EXTENDED_1M_RETENTION_TRADING_DAYS > 1:
+            extended_minute_threshold_day = self._calendar.previous_trading_days(
+                anchor_day,
+                MARKET_BARS_EXTENDED_1M_RETENTION_TRADING_DAYS,
+            )[0]
         daily_threshold_day = self._subtract_years(anchor_day, MARKET_BARS_1D_RETENTION_YEARS)
 
         async with self._uow_factory.build() as uow:
             deleted_1m_rows = await uow.bars.delete_1m_before(threshold_day=minute_threshold_day)
+            deleted_1m_rows += await uow.bars.delete_1m_before(
+                threshold_day=extended_minute_threshold_day,
+                session_kinds=sorted(MARKET_BARS_EXTENDED_SESSION_KINDS),
+            )
             deleted_1d_rows = await uow.bars.delete_1d_before(threshold_day=daily_threshold_day)
             states = await uow.ticker_bars_state.list_by_statuses(
                 statuses=sorted(TICKER_BARS_READINESS_STATES)

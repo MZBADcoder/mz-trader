@@ -10,6 +10,7 @@ from application.services.market_data._bars_maintenance_support import (
     build_canonical_1m_rows,
     build_initializing_state,
     build_ready_state,
+    retain_latest_extended_session_rows,
 )
 from domain.entities import CanonicalBar, MarketDataMode, SnapshotCoordinatorRefreshResult
 from domain.rules import MARKET_BARS_1D_RETENTION_YEARS, MARKET_BARS_1M_RETENTION_TRADING_DAYS
@@ -126,6 +127,10 @@ class RunTickerBarsBootstrapService:
             calendar=self._calendar,
             effective_now=effective_now,
             synced_at=now_synced_at,
+        )
+        minute_rows = retain_latest_extended_session_rows(
+            rows=minute_rows,
+            latest_extended_trading_day=anchor_day,
         )
 
         async with self._uow_factory.build() as uow:

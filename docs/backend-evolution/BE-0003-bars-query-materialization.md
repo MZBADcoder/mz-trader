@@ -519,14 +519,15 @@ explicit range mode 不做自动交易日 fallback：
 - DB 只保存 provider truth
 - synthetic fill bars 只在 read path 中临时生成
 - canonical rows 使用 upsert，按自然键覆盖
-- `1m` canonical 只保留最近 `10` 个 trading days
+- `regular` `1m` canonical 保留最近 `10` 个 trading days
+- `pre_market` / `after_hours` `1m` canonical 只保留最新 `1` 个 trading day
 - `1d` canonical 只保留最近 `10` years
 
 ### 9.2 `market_bars_1m`
 
 用途：
 
-- 全量承接 provider 的 minute bars
+- 承接 provider 的 minute bars，并按 session-aware retention 写入
 - 覆盖 `pre_market / regular / after_hours`
 - 作为所有 intraday resolution 的事实层
 - 作为 current day / current bucket stitch 的事实层
@@ -562,7 +563,8 @@ explicit range mode 不做自动交易日 fallback：
 - 只保存 provider 返回的真实 `1m` bars
 - 不保存 `5m/15m/30m/60m`
 - 不保存 synthetic fill bars
-- 只保留最近 `10` 个 trading days
+- `regular` 只保留最近 `10` 个 trading days
+- `pre_market` / `after_hours` 只保留最新 `1` 个 trading day
 
 ### 9.3 `market_bars_1d`
 
@@ -1438,18 +1440,37 @@ for each tracked ticker
 
 MVP 保留策略：
 
-- 只保留最近 `10` 个 trading days 的 `1m`
+- `regular` session 保留最近 `10` 个 trading days 的 `1m`
+- `pre_market` / `after_hours` 只保留最新 `1` 个 trading day 的 `1m`
 - 只保留最近 `10` years 的 `1d`
 
 执行规则：
 
 ```text
 daily cleanup
-  -> compute oldest retained trading day for 1m
-  -> delete 1m rows older than threshold
+  -> compute oldest retained trading day for regular 1m
+  -> delete all 1m rows older than regular threshold
+  -> compute latest retained trading day for extended-session 1m
+  -> delete pre_market / after_hours rows older than extended threshold
   -> compute oldest retained day for 1d
   -> delete 1d rows older than threshold
 ```
+
+写入规则：
+
+```text
+bootstrap / historical reconcile
+  -> fetch retained 1m range from Massive
+  -> keep historical regular rows
+  -> keep extended-session rows only for latest retained trading day
+  -> upsert 1m canonical
+```
+
+说明：
+
+- MVP 中历史图表的主要 source of truth 是 `regular` session
+- `pre_market` / `after_hours` 主要服务当天盘前异动、盘后反应、当前价格上下文
+- 若未来产品需要历史 extended-hours overlay，应作为显式升级重新调整 retention 与查询语义
 
 ### 18.8.4 初始化策略
 
@@ -1636,8 +1657,10 @@ initializing timeout
   - close 后 `2-5` 分钟首轮
 - historical reconciler：
   - 低频异步批量运行
-- `1m` retention：
+- regular `1m` retention：
   - 最近 `10` 个 trading days
+- pre/after `1m` retention：
+  - 最新 `1` 个 trading day
 - `1d` retention：
   - 最近 `10` years
 

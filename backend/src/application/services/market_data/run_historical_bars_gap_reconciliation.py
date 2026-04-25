@@ -6,7 +6,11 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import Callable
 
-from application.services.market_data._bars_maintenance_support import build_canonical_1m_rows, build_ready_state
+from application.services.market_data._bars_maintenance_support import (
+    build_canonical_1m_rows,
+    build_ready_state,
+    retain_latest_extended_session_rows,
+)
 from application.services.market_data.run_ticker_bars_bootstrap import RunTickerBarsBootstrapService
 from domain.entities import BarsMaintenanceResult, CanonicalBar, MarketDataMode
 from domain.rules import MARKET_BARS_1M_RETENTION_TRADING_DAYS
@@ -112,6 +116,10 @@ class RunHistoricalBarsGapReconciliationService:
             calendar=self._calendar,
             effective_now=effective_now,
             synced_at=synced_at,
+        )
+        minute_rows = retain_latest_extended_session_rows(
+            rows=minute_rows,
+            latest_extended_trading_day=anchor_day,
         )
         daily_provider_bars = await self._bars_client.fetch_range(
             ticker=ticker,

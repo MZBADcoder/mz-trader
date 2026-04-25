@@ -6,6 +6,7 @@ from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 
 from domain.entities import CanonicalBar, ProviderBar, TickerBarsState
+from domain.rules import MARKET_BARS_EXTENDED_SESSION_KINDS
 from infrastructure.calendar import UsStockCalendar
 
 
@@ -82,6 +83,19 @@ def aggregate_daily_row(
         first_synced_at=synced_at,
         last_synced_at=synced_at,
     )
+
+
+def retain_latest_extended_session_rows(
+    *,
+    rows: list[CanonicalBar],
+    latest_extended_trading_day: date,
+) -> list[CanonicalBar]:
+    return [
+        row
+        for row in rows
+        if row.session_kind not in MARKET_BARS_EXTENDED_SESSION_KINDS
+        or row.trading_day >= latest_extended_trading_day
+    ]
 
 
 def build_ready_state(

@@ -184,8 +184,15 @@ class MarketBarRepository:
         )
         await self._session.execute(stmt)
 
-    async def delete_1m_before(self, *, threshold_day: date) -> int:
+    async def delete_1m_before(
+        self,
+        *,
+        threshold_day: date,
+        session_kinds: list[str] | None = None,
+    ) -> int:
         stmt = delete(MarketBar1mModel).where(MarketBar1mModel.trading_day < threshold_day)
+        if session_kinds is not None:
+            stmt = stmt.where(MarketBar1mModel.session_kind.in_(session_kinds))
         result = cast(CursorResult[object], await self._session.execute(stmt))
         return int(result.rowcount if result.rowcount is not None else 0)
 
