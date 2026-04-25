@@ -1,4 +1,3 @@
-"""Worker tasks package placeholder."""
 """Worker task exports."""
 
 from worker.tasks.bar_refresh import (
@@ -8,7 +7,7 @@ from worker.tasks.bar_refresh import (
     run_post_close_bars_finalizer,
     run_ticker_bars_bootstrap,
 )
-from worker.tasks.snapshot_coordinator import run_snapshot_coordinator_refresh
+from worker.tasks.snapshot_coordinator import run_snapshot_coordinator_refresh, run_terminal_snapshot_finalizer
 
 
 __all__ = [
@@ -17,5 +16,6 @@ __all__ = [
     "run_historical_bars_gap_reconciliation",
     "run_post_close_bars_finalizer",
     "run_snapshot_coordinator_refresh",
+    "run_terminal_snapshot_finalizer",
     "run_ticker_bars_bootstrap",
 ]

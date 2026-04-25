@@ -20,6 +20,12 @@ def run_snapshot_coordinator_refresh() -> dict[str, Any]:
     return asyncio.run(_run_snapshot_coordinator_refresh())
 
 
+@celery_app.task(name="worker.tasks.snapshot_coordinator.run_terminal_snapshot_finalizer")
+def run_terminal_snapshot_finalizer() -> dict[str, Any]:
+    """Persist terminal snapshots after after-hours close."""
+    return asyncio.run(_run_terminal_snapshot_finalizer())
+
+
 async def _run_snapshot_coordinator_refresh() -> dict[str, Any]:
     settings = get_settings()
     container = Container(settings)
@@ -41,4 +47,28 @@ async def _run_snapshot_coordinator_refresh() -> dict[str, Any]:
         logger.warning("snapshot coordinator refresh completed with failures", extra=payload)
     else:
         logger.info("snapshot coordinator refresh completed", extra=payload)
+    return payload
+
+
+async def _run_terminal_snapshot_finalizer() -> dict[str, Any]:
+    settings = get_settings()
+    container = Container(settings)
+    try:
+        result = await container.get_run_terminal_snapshot_finalizer_service().execute()
+    finally:
+        await container.shutdown()
+
+    payload = {
+        "status": result.status,
+        "total_tickers": result.total_tickers,
+        "refreshed_tickers": result.refreshed_tickers,
+        "failed_tickers": result.failed_tickers,
+        "skip_reason": result.skip_reason,
+    }
+    if result.status == "skipped":
+        logger.info("terminal snapshot finalizer skipped", extra=payload)
+    elif result.failed_tickers:
+        logger.warning("terminal snapshot finalizer completed with failures", extra=payload)
+    else:
+        logger.info("terminal snapshot finalizer completed", extra=payload)
     return payload

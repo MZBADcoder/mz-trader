@@ -26,6 +26,13 @@ celery_app.conf.update(
             "task": "worker.tasks.snapshot_coordinator.run_snapshot_coordinator_refresh",
             "schedule": settings.resolved_market_data_snapshot_refresh_interval_seconds,
         },
+        "terminal-snapshot-finalizer": {
+            "task": "worker.tasks.snapshot_coordinator.run_terminal_snapshot_finalizer",
+            "schedule": crontab(
+                minute=settings.market_data_snapshot_terminal_finalizer_minute_et,
+                hour=settings.market_data_snapshot_terminal_finalizer_hour_et,
+            ),
+        },
         "current-day-bars-refresh": {
             "task": "worker.tasks.bar_refresh.run_current_day_bars_refresh",
             "schedule": settings.resolved_market_data_bars_current_day_refresh_interval_seconds,

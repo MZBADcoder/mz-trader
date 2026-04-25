@@ -29,6 +29,7 @@ class ValidatedSnapshotPayload:
     """Required snapshot fields after nullability checks."""
 
     last: float
+    regular_close: float
     change: float
     change_pct: float
     open_price: float
@@ -136,19 +137,22 @@ class MassiveSnapshotClient:
         if not ticker:
             return None
 
-        session = self._read_dict(item, "session", "day")
+        session = self._read_dict(item, "day", "session")
+        minute = self._read_dict(item, "min", "minute")
         prev_day = self._read_dict(item, "prevDay", "prev_day")
         last_trade = self._read_dict(item, "lastTrade", "last_trade")
 
         last = (
             self._read_float(last_trade, "p", "price")
             or self._read_float(item, "last")
+            or self._read_float(minute, "close", "c")
             or self._read_float(session, "close", "c")
         )
         open_price = self._read_float(session, "open", "o")
         high = self._read_float(session, "high", "h")
         low = self._read_float(session, "low", "l")
         volume = self._read_int(session, "volume", "v")
+        regular_close = self._read_float(session, "close", "c")
         prev_close = (
             self._read_float(prev_day, "close", "c")
             or self._read_float(item, "prevClose", "prev_close")
@@ -162,7 +166,11 @@ class MassiveSnapshotClient:
             item,
             "updated",
             "updated_at",
-            fallback_sources=(last_trade, session, prev_day),
+            fallback_sources=(last_trade, minute, session, prev_day),
+        )
+        last_trade_at = (
+            self._read_timestamp(last_trade, "t", "timestamp", "updated", "updated_at")
+            or self._read_timestamp(minute, "t", "timestamp", "updated", "updated_at")
         )
         market_status = (
             self._read_str(item, "market_status", "marketStatus")
@@ -171,6 +179,7 @@ class MassiveSnapshotClient:
         )
         validated = self._validate_snapshot_payload(
             last=last,
+            regular_close=regular_close,
             change=change,
             change_pct=change_pct,
             open_price=open_price,
@@ -186,6 +195,7 @@ class MassiveSnapshotClient:
         return Snapshot(
             ticker=ticker,
             last=validated.last,
+            regular_close=validated.regular_close,
             change=validated.change,
             change_pct=validated.change_pct,
             open=validated.open_price,
@@ -194,6 +204,10 @@ class MassiveSnapshotClient:
             volume=validated.volume,
             prev_close=validated.prev_close,
             market_status=market_status,
+            session="unknown",
+            trading_day=None,
+            last_session=None,
+            last_trade_at=last_trade_at,
             delay_minutes=mode.delay_minutes,
             is_realtime=mode.is_realtime,
             provider_updated_at=validated.provider_updated_at,
@@ -205,6 +219,7 @@ class MassiveSnapshotClient:
         self,
         *,
         last: float | None,
+        regular_close: float | None,
         change: float | None,
         change_pct: float | None,
         open_price: float | None,
@@ -216,6 +231,8 @@ class MassiveSnapshotClient:
     ) -> ValidatedSnapshotPayload | None:
         """Return required fields only when the upstream snapshot is complete."""
         if last is None:
+            return None
+        if regular_close is None:
             return None
         if change is None:
             return None
@@ -236,6 +253,7 @@ class MassiveSnapshotClient:
 
         return ValidatedSnapshotPayload(
             last=last,
+            regular_close=regular_close,
             change=change,
             change_pct=change_pct,
             open_price=open_price,

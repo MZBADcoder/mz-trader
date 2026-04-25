@@ -21,6 +21,9 @@ from application.services.market_data.run_post_close_bars_finalizer import (
 from application.services.market_data.run_snapshot_coordinator_refresh import (
     RunSnapshotCoordinatorRefreshService,
 )
+from application.services.market_data.run_terminal_snapshot_finalizer import (
+    RunTerminalSnapshotFinalizerService,
+)
 from application.services.market_data.run_ticker_bars_bootstrap import (
     RunTickerBarsBootstrapService,
 )
@@ -36,5 +39,6 @@ __all__ = [
     "RunHistoricalBarsGapReconciliationService",
     "RunPostCloseBarsFinalizerService",
     "RunSnapshotCoordinatorRefreshService",
+    "RunTerminalSnapshotFinalizerService",
     "RunTickerBarsBootstrapService",
 ]

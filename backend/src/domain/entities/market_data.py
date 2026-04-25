@@ -33,6 +33,7 @@ class Snapshot:
 
     ticker: str
     last: float
+    regular_close: float
     change: float
     change_pct: float
     open: float
@@ -41,6 +42,10 @@ class Snapshot:
     volume: int
     prev_close: float
     market_status: str
+    session: str
+    trading_day: date | None
+    last_session: str | None
+    last_trade_at: datetime | None
     delay_minutes: int
     is_realtime: bool
     provider_updated_at: datetime

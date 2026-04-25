@@ -584,3 +584,55 @@ Redis snapshot
   - `delay_minutes == 15` 时，默认 `50s`
 - Massive batch snapshot 的 chunk size 当前固定为 `100`
 - partial response 当前不对 frontend 外显，只写 `WARN` 日志并打印缺失或异常 ticker
+
+## 19. 交易日历感知的 Snapshot 更新
+
+当前 snapshot 链路补充交易日历约束：
+
+```text
+trading day 04:00-20:00 ET
+  -> snapshot coordinator 高频刷新 Redis
+  -> snapshots API 可在 Redis miss 时 fallback Massive
+
+outside 04:00-20:00 ET / non-trading day
+  -> snapshot coordinator skip
+  -> snapshots API 读取 PostgreSQL terminal snapshot
+  -> 默认不在请求路径 fallback Massive
+```
+
+后端返回的 snapshot 增加 session metadata：
+
+- `session`
+  - 由 `UsStockCalendar` 和 `effective_now = now - delay_minutes` 推断
+  - 可取 `pre_market / regular / after_hours / closed`
+- `trading_day`
+  - 当前 active session 的交易日，或 closed 状态下对应的 terminal trading day
+- `last_session`
+  - 基于 `last_trade_at` 通过交易日历推断，表示 latest price 来源 session
+- `last_trade_at`
+  - Massive `lastTrade` 或 `min` 的时间戳
+- `regular_close`
+  - Massive snapshot `day.c`，表示 regular session close
+
+Terminal snapshot 在 after-hours close 后统一落库：
+
+```text
+terminal-snapshot-finalizer
+  -> daily 20:30 ET
+  -> guard: trading day and effective_now > after_hours_end
+  -> fetch Massive snapshot once
+  -> use day.* as regular final OHLCV
+  -> use lastTrade/min as latest after-hours-aware price
+  -> upsert market_terminal_snapshots(ticker, trading_day)
+```
+
+这样不再需要 regular close 和 after-hours close 各落一份 snapshot：
+
+```text
+Massive snapshot after 20:00 ET
+  -> day        = regular final aggregate
+  -> lastTrade  = latest trade, may be after-hours
+  -> min        = latest minute aggregate
+```
+
+当前 DB terminal snapshot 是 closed-session 查询的 single source of truth；Redis 只服务 active trading window 的 live snapshot。

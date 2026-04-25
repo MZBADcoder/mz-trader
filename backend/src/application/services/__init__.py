@@ -11,6 +11,7 @@ from application.services.market_data import (
     RunHistoricalBarsGapReconciliationService,
     RunPostCloseBarsFinalizerService,
     RunSnapshotCoordinatorRefreshService,
+    RunTerminalSnapshotFinalizerService,
     RunTickerBarsBootstrapService,
 )
 from application.services.ticker_search import SearchTickersService
@@ -34,6 +35,7 @@ __all__ = [
     "RunHistoricalBarsGapReconciliationService",
     "RunPostCloseBarsFinalizerService",
     "RunSnapshotCoordinatorRefreshService",
+    "RunTerminalSnapshotFinalizerService",
     "RunTickerBarsBootstrapService",
     "SearchTickersService",
 ]

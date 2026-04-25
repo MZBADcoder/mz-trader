@@ -17,6 +17,7 @@ from application.services import (
     RunHistoricalBarsGapReconciliationService,
     RunPostCloseBarsFinalizerService,
     RunSnapshotCoordinatorRefreshService,
+    RunTerminalSnapshotFinalizerService,
     RunTickerBarsBootstrapService,
     SearchTickersService,
     DeleteWatchlistItemService,
@@ -104,8 +105,10 @@ class Container:
             mode=self._market_data_mode,
         )
         self._get_batch_snapshots_service = GetBatchSnapshotsService(
+            uow_factory=self._uow_factory,
             snapshot_store=self._snapshot_store,
             snapshot_client=self._snapshot_client,
+            calendar=self._calendar,
             mode=self._market_data_mode,
             request_limit=settings.market_data_snapshot_request_limit,
             batch_size=settings.market_data_snapshot_batch_size,
@@ -119,9 +122,17 @@ class Container:
             uow_factory=self._uow_factory,
             snapshot_store=self._snapshot_store,
             snapshot_client=self._snapshot_client,
+            calendar=self._calendar,
             mode=self._market_data_mode,
             batch_size=settings.market_data_snapshot_batch_size,
             refresh_lock_ttl_seconds=settings.resolved_market_data_snapshot_refresh_lock_ttl_seconds,
+        )
+        self._run_terminal_snapshot_finalizer_service = RunTerminalSnapshotFinalizerService(
+            uow_factory=self._uow_factory,
+            snapshot_client=self._snapshot_client,
+            calendar=self._calendar,
+            mode=self._market_data_mode,
+            batch_size=settings.market_data_snapshot_batch_size,
         )
         self._run_current_day_bars_refresh_service = RunCurrentDayBarsRefreshService(
             uow_factory=self._uow_factory,
@@ -194,6 +205,9 @@ class Container:
 
     def get_run_snapshot_coordinator_refresh_service(self) -> RunSnapshotCoordinatorRefreshService:
         return self._run_snapshot_coordinator_refresh_service
+
+    def get_run_terminal_snapshot_finalizer_service(self) -> RunTerminalSnapshotFinalizerService:
+        return self._run_terminal_snapshot_finalizer_service
 
     def get_run_current_day_bars_refresh_service(self) -> RunCurrentDayBarsRefreshService:
         return self._run_current_day_bars_refresh_service

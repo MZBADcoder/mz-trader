@@ -161,3 +161,44 @@ class MarketTickerBarsStateModel(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+
+
+class MarketTerminalSnapshotModel(Base):
+    """Terminal snapshot captured after the trading day's after-hours session."""
+
+    __tablename__ = "market_terminal_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "ticker",
+            "trading_day",
+            name="uq_market_terminal_snapshots_ticker_trading_day",
+        ),
+        Index(
+            "ix_market_terminal_snapshots_ticker_trading_day",
+            "ticker",
+            "trading_day",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    ticker: Mapped[str] = mapped_column(String(15), nullable=False)
+    trading_day: Mapped[date] = mapped_column(Date, nullable=False)
+    last: Mapped[float] = mapped_column(nullable=False)
+    regular_close: Mapped[float] = mapped_column(nullable=False)
+    change: Mapped[float] = mapped_column(nullable=False)
+    change_pct: Mapped[float] = mapped_column(nullable=False)
+    open: Mapped[float] = mapped_column(nullable=False)
+    high: Mapped[float] = mapped_column(nullable=False)
+    low: Mapped[float] = mapped_column(nullable=False)
+    volume: Mapped[int] = mapped_column(nullable=False)
+    prev_close: Mapped[float] = mapped_column(nullable=False)
+    market_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    session: Mapped[str] = mapped_column(String(32), nullable=False)
+    last_session: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    last_trade_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    delay_minutes: Mapped[int] = mapped_column(nullable=False)
+    is_realtime: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    provider_updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    data_source: Mapped[str] = mapped_column(String(64), nullable=False)
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

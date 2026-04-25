@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from domain.entities import CanonicalBar, TickerBarsState, User, WatchlistItem
+from domain.entities import CanonicalBar, Snapshot, TickerBarsState, User, WatchlistItem
 from infrastructure.db.models import (
     MarketBar1dModel,
     MarketBar1mModel,
+    MarketTerminalSnapshotModel,
     MarketTickerBarsStateModel,
     UserModel,
     WatchlistItemModel,
@@ -106,4 +107,30 @@ def to_market_ticker_bars_state_entity(model: MarketTickerBarsStateModel) -> Tic
         last_error_message=model.last_error_message,
         created_at=_ensure_utc(model.created_at),
         updated_at=_ensure_utc(model.updated_at),
+    )
+
+
+def to_market_terminal_snapshot_entity(model: MarketTerminalSnapshotModel) -> Snapshot:
+    """Map a terminal snapshot ORM model to a snapshot entity."""
+    return Snapshot(
+        ticker=model.ticker,
+        last=model.last,
+        regular_close=model.regular_close,
+        change=model.change,
+        change_pct=model.change_pct,
+        open=model.open,
+        high=model.high,
+        low=model.low,
+        volume=model.volume,
+        prev_close=model.prev_close,
+        market_status=model.market_status,
+        session=model.session,
+        trading_day=model.trading_day,
+        last_session=model.last_session,
+        last_trade_at=_ensure_utc(model.last_trade_at) if model.last_trade_at is not None else None,
+        delay_minutes=model.delay_minutes,
+        is_realtime=model.is_realtime,
+        provider_updated_at=_ensure_utc(model.provider_updated_at),
+        fetched_at=_ensure_utc(model.fetched_at),
+        data_source=model.data_source,
     )

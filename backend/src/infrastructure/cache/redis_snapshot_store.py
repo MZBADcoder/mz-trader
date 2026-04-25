@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import uuid
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any, cast
 
 from redis.asyncio import Redis
@@ -86,6 +86,7 @@ class RedisSnapshotStore:
         payload = {
             "ticker": snapshot.ticker,
             "last": snapshot.last,
+            "regular_close": snapshot.regular_close,
             "change": snapshot.change,
             "change_pct": snapshot.change_pct,
             "open": snapshot.open,
@@ -94,6 +95,14 @@ class RedisSnapshotStore:
             "volume": snapshot.volume,
             "prev_close": snapshot.prev_close,
             "market_status": snapshot.market_status,
+            "session": snapshot.session,
+            "trading_day": snapshot.trading_day.isoformat() if snapshot.trading_day is not None else None,
+            "last_session": snapshot.last_session,
+            "last_trade_at": (
+                snapshot.last_trade_at.astimezone(UTC).isoformat()
+                if snapshot.last_trade_at is not None
+                else None
+            ),
             "delay_minutes": snapshot.delay_minutes,
             "is_realtime": snapshot.is_realtime,
             "provider_updated_at": snapshot.provider_updated_at.astimezone(UTC).isoformat(),
@@ -115,6 +124,7 @@ class RedisSnapshotStore:
             return Snapshot(
                 ticker=str(payload["ticker"]),
                 last=float(payload["last"]),
+                regular_close=float(payload.get("regular_close", payload["last"])),
                 change=float(payload["change"]),
                 change_pct=float(payload["change_pct"]),
                 open=float(payload["open"]),
@@ -123,6 +133,10 @@ class RedisSnapshotStore:
                 volume=int(payload["volume"]),
                 prev_close=float(payload["prev_close"]),
                 market_status=str(payload["market_status"]),
+                session=str(payload.get("session", "unknown")),
+                trading_day=self._parse_optional_date(payload.get("trading_day")),
+                last_session=str(payload["last_session"]) if payload.get("last_session") is not None else None,
+                last_trade_at=self._parse_optional_datetime(payload.get("last_trade_at")),
                 delay_minutes=int(payload["delay_minutes"]),
                 is_realtime=bool(payload["is_realtime"]),
                 provider_updated_at=self._parse_datetime(payload["provider_updated_at"]),
@@ -140,3 +154,15 @@ class RedisSnapshotStore:
         if parsed.tzinfo is None:
             return parsed.replace(tzinfo=UTC)
         return parsed.astimezone(UTC)
+
+    def _parse_optional_datetime(self, raw_value: object) -> datetime | None:
+        if raw_value is None:
+            return None
+        return self._parse_datetime(raw_value)
+
+    def _parse_optional_date(self, raw_value: object) -> date | None:
+        if raw_value is None:
+            return None
+        if not isinstance(raw_value, str):
+            raise InternalError(detail="Cached snapshot payload is invalid.")
+        return date.fromisoformat(raw_value)

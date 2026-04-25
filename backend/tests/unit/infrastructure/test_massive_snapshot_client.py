@@ -57,9 +57,12 @@ def test_massive_snapshot_client_maps_complete_snapshot_payload() -> None:
     snapshot = result.snapshots[0]
     assert snapshot.ticker == "AAPL"
     assert snapshot.last == 212.34
+    assert snapshot.regular_close == 212.34
     assert snapshot.change == 1.23
     assert snapshot.change_pct == 0.58
     assert snapshot.market_status == "regular"
+    assert snapshot.session == "unknown"
+    assert snapshot.trading_day is None
     assert snapshot.delay_minutes == 15
     assert snapshot.is_realtime is False
     assert snapshot.provider_updated_at == datetime(2026, 4, 8, 8, 30, tzinfo=UTC)

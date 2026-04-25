@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from domain.entities import Snapshot
 from infrastructure.cache.redis_snapshot_store import RedisSnapshotStore
@@ -14,6 +14,7 @@ def _snapshot(ticker: str) -> Snapshot:
     return Snapshot(
         ticker=ticker,
         last=212.34,
+        regular_close=212.00,
         change=1.23,
         change_pct=0.58,
         open=211.10,
@@ -22,6 +23,10 @@ def _snapshot(ticker: str) -> Snapshot:
         volume=45678901,
         prev_close=211.11,
         market_status="regular",
+        session="regular",
+        trading_day=date(2026, 4, 8),
+        last_session="regular",
+        last_trade_at=datetime(2026, 4, 8, 14, 30, tzinfo=UTC),
         delay_minutes=15,
         is_realtime=False,
         provider_updated_at=datetime(2026, 4, 8, 8, 30, tzinfo=UTC),
@@ -89,6 +94,9 @@ def test_redis_snapshot_store_round_trips_snapshot_payload() -> None:
     assert result["AAPL"] == _snapshot("AAPL")
     assert redis.expirations["snapshot:AAPL"] == 50
     payload = json.loads(redis.values["snapshot:AAPL"])
+    assert payload["regular_close"] == 212.0
+    assert payload["session"] == "regular"
+    assert payload["trading_day"] == "2026-04-08"
     assert payload["provider_updated_at"] == "2026-04-08T08:30:00+00:00"
     assert payload["fetched_at"] == "2026-04-08T08:31:00+00:00"
 

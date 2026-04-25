@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     market_data_snapshot_batch_size: int = 100
     market_data_snapshot_refresh_interval_seconds: int | None = None
     market_data_snapshot_ttl_seconds: int | None = None
+    market_data_snapshot_terminal_finalizer_hour_et: int = 20
+    market_data_snapshot_terminal_finalizer_minute_et: int = 30
     market_data_bars_current_day_refresh_interval_seconds: int | None = None
     market_data_bars_post_close_finalizer_hour_et: int = 17
     market_data_bars_post_close_finalizer_minute_et: int = 0
