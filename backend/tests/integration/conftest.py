@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Iterator
+from pathlib import Path
 
+from alembic import command
+from alembic.config import Config
 import docker
 import pytest
 from fastapi import FastAPI
@@ -14,10 +17,12 @@ from redis import Redis
 from testcontainers.postgres import PostgresContainer
 from testcontainers.redis import RedisContainer
 
-from infrastructure.db.models import Base
 from infrastructure.db.session import DatabaseRuntime, create_database_runtime
 from main import create_app
 from settings import Settings
+
+
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _to_asyncpg_url(connection_url: str) -> str:
@@ -35,11 +40,19 @@ def _to_asyncpg_url(connection_url: str) -> str:
     raise ValueError(f"Unsupported PostgreSQL connection URL: {connection_url}")
 
 
-async def _reset_database(runtime: DatabaseRuntime) -> None:
-    """Recreate every ORM-managed table for a clean test database."""
-    async with runtime.engine.begin() as connection:
-        await connection.run_sync(Base.metadata.drop_all)
-        await connection.run_sync(Base.metadata.create_all)
+def _alembic_config(database_url: str) -> Config:
+    """Build an Alembic config pointed at the test database."""
+    config = Config(str(BACKEND_ROOT / "alembic.ini"))
+    config.set_main_option("script_location", str(BACKEND_ROOT / "migrations"))
+    config.set_main_option("sqlalchemy.url", database_url)
+    return config
+
+
+def _reset_database(database_url: str) -> None:
+    """Recreate the database schema through Alembic migrations."""
+    config = _alembic_config(database_url)
+    command.downgrade(config, "base")
+    command.upgrade(config, "head")
 
 
 def _ensure_docker_available() -> None:
@@ -133,9 +146,9 @@ def integration_settings(
 
 
 @pytest.fixture(autouse=True)
-def reset_database_schema(database_runtime: DatabaseRuntime) -> Iterator[None]:
+def reset_database_schema(database_url: str) -> Iterator[None]:
     """Reset the schema before each test to keep cases isolated."""
-    asyncio.run(_reset_database(database_runtime))
+    _reset_database(database_url)
     yield
 
 

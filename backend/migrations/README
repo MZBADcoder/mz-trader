@@ -1,0 +1,7 @@
+Alembic migrations for the backend PostgreSQL schema.
+
+Run commands from backend/:
+
+  poetry run alembic revision --autogenerate -m "describe change"
+  poetry run alembic upgrade head
+  poetry run alembic downgrade -1

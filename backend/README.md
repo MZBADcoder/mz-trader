@@ -1,18 +1,18 @@
 # Backend
 
-This directory contains the backend scaffold for `trader-refactor`.
+This directory contains the backend for `trader-refactor`.
 
 Current state:
 
-- structure only
-- minimal logging scaffold
-- lightweight API bootstrap
-- no business code
-- no ORM models
-- no service implementations
+- FastAPI application bootstrap
+- async SQLAlchemy persistence
+- Alembic-managed PostgreSQL schema migrations
+- Redis/Celery integration points
+- logging scaffold with request context
 
 Source layout:
 
+- `migrations`
 - `src/api`
 - `src/application`
 - `src/domain`
@@ -21,6 +21,16 @@ Source layout:
 - `src/worker`
 - `src/main.py`
 - `src/settings.py`
+
+Database migrations:
+
+```bash
+poetry run alembic upgrade head
+poetry run alembic downgrade -1
+poetry run alembic revision --autogenerate -m "describe change"
+```
+
+Alembic reads `DATABASE_URL` through `src/settings.py`, so local commands should be run from `backend/` with the same `.env` used by the application.
 
 Notes:
 
