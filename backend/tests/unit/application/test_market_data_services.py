@@ -376,6 +376,53 @@ def test_run_terminal_snapshot_finalizer_persists_after_hours_terminal_snapshots
     assert stored[0].session == "closed"
 
 
+def test_run_terminal_snapshot_finalizer_skips_before_after_hours_close() -> None:
+    uow_factory = FakeUowFactory(["AAPL"])
+    client = FakeSnapshotClient()
+    service = RunTerminalSnapshotFinalizerService(
+        uow_factory=uow_factory,
+        snapshot_client=client,
+        calendar=UsStockCalendar(),
+        mode=MarketDataMode(delay_minutes=15),
+        batch_size=100,
+        now_provider=lambda: datetime(2026, 4, 8, 23, 30, tzinfo=UTC),
+    )
+
+    result = asyncio.run(service.execute())
+
+    assert result.status == "skipped"
+    assert result.skip_reason == "after_hours_not_closed"
+    assert result.total_tickers == 0
+    assert result.refreshed_tickers == 0
+    assert client.calls == []
+    assert uow_factory._terminal_snapshots == []
+
+
+def test_run_terminal_snapshot_finalizer_reports_failed_batches() -> None:
+    uow_factory = FakeUowFactory(["AAPL", "MSFT"])
+    client = FakeSnapshotClient(raises={("AAPL",), ("MSFT",)})
+    service = RunTerminalSnapshotFinalizerService(
+        uow_factory=uow_factory,
+        snapshot_client=client,
+        calendar=UsStockCalendar(),
+        mode=MarketDataMode(delay_minutes=15),
+        batch_size=1,
+        now_provider=lambda: datetime(2026, 4, 9, 0, 30, tzinfo=UTC),
+    )
+
+    result = asyncio.run(service.execute())
+
+    assert result.status == "completed"
+    assert result.total_tickers == 2
+    assert result.refreshed_tickers == 0
+    assert result.failed_tickers == ["AAPL", "MSFT"]
+    assert client.calls == [
+        (["AAPL"], "massive_terminal_snapshot_finalizer"),
+        (["MSFT"], "massive_terminal_snapshot_finalizer"),
+    ]
+    assert uow_factory._terminal_snapshots == []
+
+
 def test_settings_uses_safe_snapshot_refresh_lock_ttl_default_and_minimum() -> None:
     default_settings = Settings(market_data_snapshot_refresh_interval_seconds=10)
     configured_settings = Settings(

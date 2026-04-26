@@ -12,31 +12,46 @@ from infrastructure.external.massive_snapshot_client import MassiveSnapshotClien
 
 
 def test_massive_snapshot_client_maps_complete_snapshot_payload() -> None:
-    transport = httpx.MockTransport(
-        lambda request: httpx.Response(
+    captured_requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured_requests.append(request)
+        return httpx.Response(
             200,
             json={
+                "status": "OK",
+                "count": 1,
                 "tickers": [
                     {
                         "ticker": "aapl",
                         "todaysChange": 1.23,
                         "todaysChangePerc": 0.58,
-                        "updated": "2026-04-08T08:30:00Z",
-                        "session": {
-                            "open": 211.10,
-                            "high": 213.00,
-                            "low": 210.60,
-                            "close": 212.34,
-                            "volume": 45678901,
-                            "marketStatus": "regular",
+                        "updated": 1775658600000,
+                        "day": {
+                            "o": 211.10,
+                            "h": 213.00,
+                            "l": 210.60,
+                            "c": 212.00,
+                            "v": 45678901,
+                        },
+                        "min": {
+                            "c": 212.34,
+                            "t": 1775658600000,
+                        },
+                        "lastTrade": {
+                            "p": 212.34,
+                            "t": 1775658600000,
                         },
                         "prevDay": {
-                            "close": 211.11,
+                            "c": 211.11,
                         },
                     }
-                ]
+                ],
             },
         )
+
+    transport = httpx.MockTransport(
+        handler
     )
     client = MassiveSnapshotClient(
         api_key="key",
@@ -52,20 +67,24 @@ def test_massive_snapshot_client_maps_complete_snapshot_payload() -> None:
         )
     )
 
+    assert len(captured_requests) == 1
+    assert captured_requests[0].url.path == "/v2/snapshot/locale/us/markets/stocks/tickers"
+    assert dict(captured_requests[0].url.params) == {"tickers": "AAPL"}
     assert result.unresolved_tickers == []
     assert len(result.snapshots) == 1
     snapshot = result.snapshots[0]
     assert snapshot.ticker == "AAPL"
     assert snapshot.last == 212.34
-    assert snapshot.regular_close == 212.34
+    assert snapshot.regular_close == 212.00
     assert snapshot.change == 1.23
     assert snapshot.change_pct == 0.58
-    assert snapshot.market_status == "regular"
+    assert snapshot.market_status == "closed"
     assert snapshot.session == "unknown"
     assert snapshot.trading_day is None
     assert snapshot.delay_minutes == 15
     assert snapshot.is_realtime is False
-    assert snapshot.provider_updated_at == datetime(2026, 4, 8, 8, 30, tzinfo=UTC)
+    assert snapshot.provider_updated_at == datetime(2026, 4, 8, 14, 30, tzinfo=UTC)
+    assert snapshot.last_trade_at == datetime(2026, 4, 8, 14, 30, tzinfo=UTC)
 
 
 def test_massive_snapshot_client_marks_missing_change_as_unresolved() -> None:
@@ -77,17 +96,16 @@ def test_massive_snapshot_client_marks_missing_change_as_unresolved() -> None:
                     {
                         "ticker": "NVDA",
                         "todaysChangePerc": 0.42,
-                        "updated": "2026-04-08T08:30:00Z",
-                        "session": {
-                            "open": 101.0,
-                            "high": 103.0,
-                            "low": 100.5,
-                            "close": 102.0,
-                            "volume": 1200,
-                            "marketStatus": "regular",
+                        "updated": 1775658600000,
+                        "day": {
+                            "o": 101.0,
+                            "h": 103.0,
+                            "l": 100.5,
+                            "c": 102.0,
+                            "v": 1200,
                         },
                         "prevDay": {
-                            "close": 100.0,
+                            "c": 100.0,
                         },
                     }
                 ]
@@ -121,17 +139,16 @@ def test_massive_snapshot_client_marks_missing_change_pct_as_unresolved() -> Non
                     {
                         "ticker": "MSFT",
                         "todaysChange": 0.75,
-                        "updated": "2026-04-08T08:30:00Z",
-                        "session": {
-                            "open": 312.0,
-                            "high": 315.0,
-                            "low": 311.0,
-                            "close": 314.0,
-                            "volume": 4500,
-                            "marketStatus": "regular",
+                        "updated": 1775658600000,
+                        "day": {
+                            "o": 312.0,
+                            "h": 315.0,
+                            "l": 311.0,
+                            "c": 314.0,
+                            "v": 4500,
                         },
                         "prevDay": {
-                            "close": 313.25,
+                            "c": 313.25,
                         },
                     }
                 ]
