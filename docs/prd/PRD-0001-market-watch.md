@@ -63,7 +63,8 @@
 
 - Frontend 仅面向 Backend API；如后续需要增量更新，也只面向 Backend 暴露的统一更新通道，不与 Massive 直接交互。
 - Backend 是唯一的数据编排与归一化入口。
-- 对历史 bars 的默认读取流程为：`frontend -> backend -> database`；数据库 miss 时由 backend 请求 Massive，成功后回写数据库，再返回 frontend。
+- 对历史 bars 的默认读取流程为：`frontend -> backend -> database`；API 请求路径只读数据库，不在请求中主动回源 Massive。
+- bars 的 Massive 回源、初始化、当前交易日刷新、历史缺口修复、收盘固化与清理由 backend 后台任务负责；若本地数据暂缺，API 返回当前已知可用数据，并通过 `readiness` / `X-Partial-Range` 表达准备状态或区间不完整。
 - 对 snapshots 的共享拉取、请求合并、缓存/预热、以及后续如需增量更新时的分发与 fallback 策略均由 backend 负责。
 
 ## 4. 用户场景
@@ -151,10 +152,11 @@
   - `pre_market`
   - `regular`
   - `after_hours`
-- bars 查询优先读取数据库；miss 时回源 Massive，成功后写入数据库。
+- bars 查询只读取数据库；数据库 miss 不在请求路径回源 Massive。
 - bars 存储层以 `1m` 与 `1d` 为 canonical source；其它 resolution 由 backend 聚合。
+- MVP bars 价格口径固定为 `split_adjusted`；未复权 `raw` 价格不作为当前产品需求。
 - `1d` canonical 只保存 completed regular-day bars；当前未完成的 `1D / 1W / 1M / 1Q` 最后一根可由 `1m` 动态拼接。
-- 对当前交易日的 mutable tail，backend 允许 read-through Massive 并 upsert `1m` canonical。
+- 对当前交易日的 mutable tail，backend 通过后台 refresh 任务回源 Massive 并 upsert `1m` canonical。
 - Massive provider truth 可能是 sparse 的；backend 需要支持可选的 fill 策略供图表连续显示。
 - 返回 `X-Data-Source` 与 `X-Partial-Range`，用于前端可视化数据来源与范围截断。
 - bars 的实时拼接、最终固化、以及与未来增量更新机制的精细协同逻辑不在本 PRD 细化，由单独 backend evolution 文档定义。
@@ -185,7 +187,7 @@
 - [ ] 用户可完成 watchlist 的增删查；同一用户下 ticker 去重、统一大写、刷新后仍持久化存在。
 - [ ] snapshots 接口可按最多 50 个 ticker 批量返回统一口径的股票快照，并在前端正确渲染。
 - [ ] snapshots 或能力配置接口可让前端感知当前 `delay_minutes` / realtime 模式。
-- [ ] bars 接口可按 ticker 与时间区间稳定返回历史数据；数据库 miss 时会回源 Massive 并写入数据库。
+- [ ] bars 接口可按 ticker 与时间区间稳定返回数据库中的历史数据；数据库 miss 不在请求路径回源，缺失数据由后台任务初始化、刷新或修复。
 - [ ] bars 接口返回的数据来源与部分区间状态可被前端感知。
 - [ ] 页面在 G2 阶段可通过 snapshots 持续刷新保持可读；若后续启用增量更新通道，该通道异常时前端可自动降级且核心页面可继续读取。
 - [ ] 前后端错误码与错误语义一致，关键失败路径可追踪。
@@ -193,7 +195,7 @@
 ## 9. 里程碑
 
 1. M1：Auth + Watchlist + snapshots 稳定可用。
-2. M2：bars 查询链路、数据库回源/回写与前端详情图表稳定可用。
+2. M2：bars 查询链路、后台回源/回写与前端详情图表稳定可用。
 3. M3：持续更新、降级与恢复闭环完成（实现方式可为 polling 或 SSE）。
 
 ## 10. 风险

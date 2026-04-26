@@ -93,7 +93,7 @@ Background jobs
 - 不包含 overnight session
 - 不包含 futures、options、crypto 等多市场日历
 - 不包含服务端指标计算 API
-- 不包含 corporate actions 全量本地建模；MVP 只为 adjustment 维度预留扩展位
+- 不包含 corporate actions 全量本地建模；MVP 固定使用 split-adjusted bars，不支持 raw adjustment
 
 ## 4. 设计结论
 
@@ -166,9 +166,8 @@ product-level 阶段若观测到热点，再考虑：
 - `VW`
   - `volume-weighted average price`，即成交量加权平均价
 - `adjustment`
-  - 价格复权模式。本文件只定义：
+  - 价格复权模式。本文件只定义并支持：
     - `split_adjusted`
-    - `raw`
 
 ## 6. 支持范围
 
@@ -234,7 +233,7 @@ frontend-facing 参数模型在本阶段做一次收敛：
 - `count_back`
   - 需要的输出 bars 数量
 - `adjustment`
-  - 枚举：`split_adjusted|raw`
+  - 枚举：`split_adjusted`
   - 默认：`split_adjusted`
 - `fill`
   - 枚举：`carry_forward|none`
@@ -602,18 +601,17 @@ explicit range mode 不做自动交易日 fallback：
 - 当前未完成 trading day 不写入 `1d`
 - 只保留最近 `10` years
 
-### 9.4 Adjustment 维度
+### 9.4 Adjustment 口径
 
-本期 schema 必须预留 `adjustment` 维度：
+本期产品只使用 split-adjusted bars：
 
 - `split_adjusted`
-- `raw`
 
-MVP 建议：
+决策：
 
-- 默认只实现 `split_adjusted`
-- `raw` 可以暂时返回 `422 MARKET_BARS_ADJUSTMENT_UNSUPPORTED`
-- 但表结构和 API 契约不要把 `raw` 封死
+- `raw` adjustment 不作为当前产品需求；未复权价格对本项目图表观察没有实际意义
+- API 若收到非 `split_adjusted` 的 adjustment，返回 `422 MARKET_BARS_ADJUSTMENT_UNSUPPORTED`
+- 存储模型保留 `adjustment` 字段，用于表达当前数据口径和避免未来迁移成本；但不承诺支持 `raw`
 
 ## 10. Read Path
 
@@ -1757,7 +1755,6 @@ initializing timeout
 
 后续再补：
 
-- `raw` adjustment
 - server-side indicators
 - non-regular `1W/1M/1Q`
 - SSE / stream delivery
