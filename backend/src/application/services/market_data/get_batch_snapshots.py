@@ -54,10 +54,15 @@ class GetBatchSnapshotsService:
         bind_request_context(user_id=user_id)
 
         normalized_tickers = validate_market_data_tickers(tickers, limit=self._request_limit)
-        effective_now = self._now_provider().astimezone(UTC) - timedelta(minutes=self._mode.delay_minutes)
+        now = self._now_provider().astimezone(UTC)
+        effective_now = now - timedelta(minutes=self._mode.delay_minutes)
         context = build_snapshot_session_context(calendar=self._calendar, effective_now=effective_now)
         if not context.active:
-            return await self._execute_from_terminal_snapshots(tickers=normalized_tickers, context=context)
+            return await self._execute_from_terminal_snapshots(
+                tickers=normalized_tickers,
+                context=context,
+                captured_at=now,
+            )
 
         cached_snapshots = await self._snapshot_store.get_many(normalized_tickers)
         cached_snapshots = {
@@ -117,6 +122,7 @@ class GetBatchSnapshotsService:
         tickers: list[str],
         *,
         context: SnapshotSessionContext,
+        data_source: str = "massive_fallback",
     ) -> tuple[dict[str, Snapshot], list[str]]:
         snapshots_by_ticker: dict[str, Snapshot] = {}
         unresolved_tickers: list[str] = []
@@ -126,7 +132,7 @@ class GetBatchSnapshotsService:
                 batch = await self._snapshot_client.fetch_snapshots(
                     tickers=chunk,
                     mode=self._mode,
-                    data_source="massive_fallback",
+                    data_source=data_source,
                 )
             except MarketSnapshotUpstreamUnavailableError:
                 unresolved_tickers.extend(chunk)
@@ -150,6 +156,7 @@ class GetBatchSnapshotsService:
         *,
         tickers: list[str],
         context: SnapshotSessionContext,
+        captured_at: datetime,
     ) -> BatchSnapshotsResult:
         async with self._uow_factory.build() as uow:
             terminal_snapshots = await uow.terminal_snapshots.list_for_tickers(
@@ -160,20 +167,39 @@ class GetBatchSnapshotsService:
         snapshots_by_ticker = {
             snapshot.ticker: replace(snapshot, session=context.session) for snapshot in terminal_snapshots
         }
+        missing_tickers = [ticker for ticker in tickers if ticker not in snapshots_by_ticker]
+        fallback_snapshots: dict[str, Snapshot] = {}
+        unresolved_tickers: list[str] = []
+
+        if missing_tickers:
+            fallback_snapshots, unresolved_tickers = await self._fetch_missing_snapshots(
+                missing_tickers,
+                context=context,
+                data_source="massive_terminal_snapshot_fallback",
+            )
+            if fallback_snapshots:
+                async with self._uow_factory.build() as uow:
+                    await uow.terminal_snapshots.upsert_many(
+                        snapshots=list(fallback_snapshots.values()),
+                        captured_at=captured_at,
+                    )
+                    await uow.commit()
+
+        snapshots_by_ticker = {**snapshots_by_ticker, **fallback_snapshots}
         items = [snapshots_by_ticker[ticker] for ticker in tickers if ticker in snapshots_by_ticker]
         if not items:
             raise MarketSnapshotUpstreamUnavailableError(
-                detail="No terminal snapshots could be resolved for the requested tickers."
+                detail="No snapshots could be resolved for the requested tickers."
             )
 
-        missing_tickers = [ticker for ticker in tickers if ticker not in snapshots_by_ticker]
-        if missing_tickers:
+        if unresolved_tickers:
             logger.warning(
                 "partial terminal snapshot response",
                 extra={
                     "ticker_count": len(tickers),
                     "trading_day": context.trading_day.isoformat(),
-                    "missing_tickers": missing_tickers,
+                    "terminal_miss_tickers": missing_tickers,
+                    "unresolved_tickers": unresolved_tickers,
                     "returned_tickers": [snapshot.ticker for snapshot in items],
                 },
             )
@@ -183,6 +209,10 @@ class GetBatchSnapshotsService:
             delay_minutes=self._mode.delay_minutes,
             is_realtime=self._mode.is_realtime,
         )
+
+    def set_now_provider(self, now_provider: Callable[[], datetime]) -> None:
+        """Override the clock used by this service."""
+        self._now_provider = now_provider
 
     def _with_session_context(self, *, snapshot: Snapshot, context: SnapshotSessionContext) -> Snapshot:
         return attach_snapshot_session_context(

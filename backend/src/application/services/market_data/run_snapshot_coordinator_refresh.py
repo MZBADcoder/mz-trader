@@ -151,3 +151,7 @@ class RunSnapshotCoordinatorRefreshService:
             deduped.append(ticker)
             seen.add(ticker)
         return deduped
+
+    def set_now_provider(self, now_provider: Callable[[], datetime]) -> None:
+        """Override the clock used by this service."""
+        self._now_provider = now_provider

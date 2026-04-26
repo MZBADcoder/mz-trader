@@ -6,7 +6,7 @@ import uuid
 from datetime import UTC, date, datetime
 from typing import cast
 
-from sqlalchemy import Select, and_, delete, select
+from sqlalchemy import Select, delete, select
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession

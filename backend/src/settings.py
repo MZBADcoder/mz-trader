@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     market_data_snapshot_batch_size: int = 100
     market_data_snapshot_refresh_interval_seconds: int | None = None
     market_data_snapshot_ttl_seconds: int | None = None
+    market_data_snapshot_refresh_lock_ttl_seconds: int | None = None
     market_data_snapshot_terminal_finalizer_hour_et: int = 20
     market_data_snapshot_terminal_finalizer_minute_et: int = 30
     market_data_bars_current_day_refresh_interval_seconds: int | None = None
@@ -85,7 +86,9 @@ class Settings(BaseSettings):
     @property
     def resolved_market_data_snapshot_refresh_lock_ttl_seconds(self) -> int:
         """Return the Redis lock TTL for coordinator refresh single-flight."""
-        return ceil(self.resolved_market_data_snapshot_refresh_interval_seconds * 2.5)
+        if self.market_data_snapshot_refresh_lock_ttl_seconds is not None:
+            return max(self.market_data_snapshot_refresh_lock_ttl_seconds, 60)
+        return max(ceil(self.resolved_market_data_snapshot_refresh_interval_seconds * 2.5), 300)
 
     @property
     def resolved_market_data_bars_current_day_refresh_interval_seconds(self) -> int:

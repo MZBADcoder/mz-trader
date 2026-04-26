@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from datetime import datetime
+
 from application.services import (
     AddWatchlistItemService,
     GetBatchSnapshotsService,
@@ -35,7 +38,13 @@ from settings import Settings
 class Container:
     """Own long-lived infrastructure dependencies and expose use-case services."""
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        snapshot_client: MassiveSnapshotClient | None = None,
+        now_provider: Callable[[], datetime] | None = None,
+    ) -> None:
         self._settings = settings
         database_runtime = create_database_runtime(
             settings.database_url,
@@ -63,7 +72,7 @@ class Container:
             base_url=settings.massive_base_url,
             timeout_seconds=settings.massive_timeout_seconds,
         )
-        self._snapshot_client = MassiveSnapshotClient(
+        self._snapshot_client = snapshot_client or MassiveSnapshotClient(
             api_key=settings.massive_api_key,
             base_url=settings.massive_base_url,
             timeout_seconds=settings.massive_timeout_seconds,
@@ -112,6 +121,7 @@ class Container:
             mode=self._market_data_mode,
             request_limit=settings.market_data_snapshot_request_limit,
             batch_size=settings.market_data_snapshot_batch_size,
+            now_provider=now_provider,
         )
         self._get_bars_service = GetBarsService(
             uow_factory=self._uow_factory,
@@ -126,6 +136,7 @@ class Container:
             mode=self._market_data_mode,
             batch_size=settings.market_data_snapshot_batch_size,
             refresh_lock_ttl_seconds=settings.resolved_market_data_snapshot_refresh_lock_ttl_seconds,
+            now_provider=now_provider,
         )
         self._run_terminal_snapshot_finalizer_service = RunTerminalSnapshotFinalizerService(
             uow_factory=self._uow_factory,
@@ -133,6 +144,7 @@ class Container:
             calendar=self._calendar,
             mode=self._market_data_mode,
             batch_size=settings.market_data_snapshot_batch_size,
+            now_provider=now_provider,
         )
         self._run_current_day_bars_refresh_service = RunCurrentDayBarsRefreshService(
             uow_factory=self._uow_factory,
@@ -228,6 +240,12 @@ class Container:
 
     def get_run_bars_retention_cleanup_service(self) -> RunBarsRetentionCleanupService:
         return self._run_bars_retention_cleanup_service
+
+    def set_market_data_now_provider(self, now_provider: Callable[[], datetime]) -> None:
+        """Override market-data service clocks for deterministic app-level tests."""
+        self._get_batch_snapshots_service.set_now_provider(now_provider)
+        self._run_snapshot_coordinator_refresh_service.set_now_provider(now_provider)
+        self._run_terminal_snapshot_finalizer_service.set_now_provider(now_provider)
 
     async def shutdown(self) -> None:
         """Dispose long-lived infra dependencies."""

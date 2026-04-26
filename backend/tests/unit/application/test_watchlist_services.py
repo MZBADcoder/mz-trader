@@ -59,10 +59,19 @@ class FakeWatchlistRepository:
         return len(self.items) != before
 
 
+class FakeTickerBarsStateRepository:
+    def __init__(self) -> None:
+        self.pending_tickers: list[str] = []
+
+    async def ensure_pending(self, *, ticker: str, requested_at: datetime) -> None:
+        self.pending_tickers.append(ticker)
+
+
 class FakeUow:
     def __init__(self, watchlist: FakeWatchlistRepository) -> None:
         self.users = FakeUserRepository()
         self.watchlist = watchlist
+        self.ticker_bars_state = FakeTickerBarsStateRepository()
         self.committed = False
 
     async def __aenter__(self) -> "FakeUow":
@@ -117,6 +126,7 @@ def test_add_watchlist_item_service_uppercases_and_commits() -> None:
     assert item.ticker == "AAPL"
     assert uow.committed is True
     assert watchlist.locked_user_ids == ["user-1"]
+    assert uow.ticker_bars_state.pending_tickers == ["AAPL"]
 
 
 def test_add_watchlist_item_service_rejects_duplicate() -> None:

@@ -582,6 +582,9 @@ Redis snapshot
 - Redis TTL 默认设置为刷新周期的 `5` 倍：
   - `delay_minutes == 0` 时，默认 `15s`
   - `delay_minutes == 15` 时，默认 `50s`
+- coordinator single-flight lock TTL 可通过 `MARKET_DATA_SNAPSHOT_REFRESH_LOCK_TTL_SECONDS` 配置：
+  - 默认下限为 `300s`，避免大 watchlist 刷新过程中锁提前过期
+  - 显式配置值低于 `60s` 时按 `60s` 生效
 - Massive batch snapshot 的 chunk size 当前固定为 `100`
 - partial response 当前不对 frontend 外显，只写 `WARN` 日志并打印缺失或异常 ticker
 
@@ -596,8 +599,9 @@ trading day 04:00-20:00 ET
 
 outside 04:00-20:00 ET / non-trading day
   -> snapshot coordinator skip
-  -> snapshots API 读取 PostgreSQL terminal snapshot
-  -> 默认不在请求路径 fallback Massive
+  -> snapshots API first reads PostgreSQL terminal snapshot for requested tickers
+  -> requested misses fallback Massive
+  -> fallback results are upserted into PostgreSQL terminal snapshot
 ```
 
 后端返回的 snapshot 增加 session metadata：
@@ -635,4 +639,10 @@ Massive snapshot after 20:00 ET
   -> min        = latest minute aggregate
 ```
 
-当前 DB terminal snapshot 是 closed-session 查询的 single source of truth；Redis 只服务 active trading window 的 live snapshot。
+当前 DB terminal snapshot 是 closed-session 查询的 first lookup，而不是唯一来源：
+
+- 若 requested ticker 已有 terminal row，直接返回该 row。
+- 若 requested ticker 缺少 terminal row，请求路径只对这些 requested misses fallback Massive。
+- fallback 成功的 requested ticker 会 upsert 到 `market_terminal_snapshots`，避免后续请求重复回源。
+- closed-session 路径不使用全局 watchlist membership 来决定响应结果，避免通过 terminal rows 暴露其他用户或全局 watchlist 覆盖面。
+- Redis 只服务 active trading window 的 live snapshot。

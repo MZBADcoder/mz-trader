@@ -16,6 +16,7 @@ from domain.entities import MarketDataMode, Snapshot
 from domain.exceptions import MarketSnapshotUpstreamUnavailableError
 from infrastructure.calendar import UsStockCalendar
 from infrastructure.external import MassiveSnapshotBatchResponse
+from settings import Settings
 
 
 def _snapshot(ticker: str, *, data_source: str = "redis") -> Snapshot:
@@ -127,6 +128,7 @@ class FakeUowFactory:
 class FakeTerminalSnapshotRepository:
     def __init__(self, snapshots: list[Snapshot]) -> None:
         self._snapshots = snapshots
+        self.upsert_calls: list[tuple[list[Snapshot], datetime]] = []
 
     async def list_for_tickers(self, *, tickers: list[str], trading_day: date) -> list[Snapshot]:
         ticker_set = set(tickers)
@@ -137,7 +139,18 @@ class FakeTerminalSnapshotRepository:
         ]
 
     async def upsert_many(self, *, snapshots: list[Snapshot], captured_at: datetime) -> None:
-        self._snapshots.extend(snapshots)
+        self.upsert_calls.append((list(snapshots), captured_at))
+        existing_by_key = {
+            (snapshot.ticker, snapshot.trading_day): index
+            for index, snapshot in enumerate(self._snapshots)
+        }
+        for snapshot in snapshots:
+            key = (snapshot.ticker, snapshot.trading_day)
+            if key in existing_by_key:
+                self._snapshots[existing_by_key[key]] = snapshot
+                continue
+            existing_by_key[key] = len(self._snapshots)
+            self._snapshots.append(snapshot)
 
 
 def test_get_batch_snapshots_service_reads_cache_then_fetches_only_missing_tickers() -> None:
@@ -302,6 +315,37 @@ def test_get_batch_snapshots_service_reads_terminal_snapshots_when_closed() -> N
     assert store.saved_batches == []
 
 
+def test_get_batch_snapshots_service_falls_back_for_terminal_misses_without_using_global_watchlist() -> None:
+    terminal_snapshot = _snapshot("AAPL", data_source="db_terminal_snapshot")
+    uow_factory = FakeUowFactory(["TSLA"], terminal_snapshots=[terminal_snapshot])
+    store = FakeSnapshotStore()
+    client = FakeSnapshotClient(
+        responses=[
+            MassiveSnapshotBatchResponse(
+                snapshots=[_snapshot("MSFT", data_source="massive_terminal_snapshot_fallback")],
+                unresolved_tickers=[],
+            )
+        ]
+    )
+    service = GetBatchSnapshotsService(
+        uow_factory=uow_factory,
+        snapshot_store=store,
+        snapshot_client=client,
+        calendar=UsStockCalendar(),
+        mode=MarketDataMode(delay_minutes=15),
+        request_limit=50,
+        batch_size=10,
+        now_provider=lambda: datetime(2026, 4, 9, 2, 0, tzinfo=UTC),
+    )
+
+    result = asyncio.run(service.execute(user_id="user-1", tickers=["AAPL", "MSFT"]))
+
+    assert [item.ticker for item in result.items] == ["AAPL", "MSFT"]
+    assert client.calls == [(["MSFT"], "massive_terminal_snapshot_fallback")]
+    assert store.saved_batches == []
+    assert sorted(snapshot.ticker for snapshot in uow_factory._terminal_snapshots) == ["AAPL", "MSFT"]
+
+
 def test_run_terminal_snapshot_finalizer_persists_after_hours_terminal_snapshots() -> None:
     uow_factory = FakeUowFactory(["AAPL"])
     client = FakeSnapshotClient(
@@ -330,3 +374,14 @@ def test_run_terminal_snapshot_finalizer_persists_after_hours_terminal_snapshots
     assert len(stored) == 1
     assert stored[0].trading_day == date(2026, 4, 8)
     assert stored[0].session == "closed"
+
+
+def test_settings_uses_safe_snapshot_refresh_lock_ttl_default_and_minimum() -> None:
+    default_settings = Settings(market_data_snapshot_refresh_interval_seconds=10)
+    configured_settings = Settings(
+        market_data_snapshot_refresh_interval_seconds=10,
+        market_data_snapshot_refresh_lock_ttl_seconds=30,
+    )
+
+    assert default_settings.resolved_market_data_snapshot_refresh_lock_ttl_seconds == 300
+    assert configured_settings.resolved_market_data_snapshot_refresh_lock_ttl_seconds == 60
