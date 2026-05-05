@@ -24,8 +24,8 @@
 - `docs/external-api-reference/`: external provider or third-party API notes.
 - `docs/prd/`: product requirement documents for major iterations. Each PRD should describe scope, goals, non-goals, scenarios, functional requirements, and acceptance criteria.
 - `docs/backend-evolution/`: backend execution plans derived from a PRD. Use these documents to break one PRD into staged backend work. If a PRD is an epic, each file here should represent one large backend task or phase.
-- `docs/frontend-evolution/`: frontend execution plans derived from a PRD. Use these documents to break one PRD into staged frontend work. If a PRD is an epic, each file here should represent one large frontend task or phase.
-- `docs/frontend-evolution/design/`: text-based frontend prototype and interaction design notes. Since this project does not currently use Figma, use this directory for iterative written descriptions of layouts, flows, states, and interaction details.
+- `docs/frontend-evolution/`: frontend execution plans and frontend design notes derived from a PRD. Use these documents to break one PRD into staged frontend work and record layouts, flows, states, interaction details, and implementation constraints.
+- `docs/frontend-evolution/prototypes/`: static frontend HTML prototypes used to iterate visual direction and interaction details before implementation.
 - `docs/todo/`: backlog notes for incomplete or intentionally deferred work. Record partially finished features, known gaps, and bugs found during testing that are not being fixed immediately.
 
 ## Document Usage Rules
@@ -33,7 +33,7 @@
 - PRD defines the target outcome; evolution docs define phased implementation; todo records known leftovers after a phase ships.
 - Do not use `docs/todo/` as a substitute for product scope. If something changes the intended product behavior, update the PRD or evolution doc instead of only adding a todo note.
 - External API usage should be backed by `docs/external-api-reference/` when the integration is important enough to affect design or repeated implementation work.
-- Frontend design decisions that are currently expressed only in chat should be written into `docs/frontend-evolution/design/` once they start guiding implementation.
+- Frontend design decisions that are currently expressed only in chat should be written into `docs/frontend-evolution/` once they start guiding implementation. Static HTML prototypes should live in `docs/frontend-evolution/prototypes/`.
 - Keep documents actionable. Prefer concrete scope, constraints, acceptance criteria, open questions, and next steps over narrative filler.
 
 ## Working Agreement

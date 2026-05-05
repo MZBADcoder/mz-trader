@@ -1,0 +1,1022 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Trade Helper Prototype</title>
+    <style>
+      :root {
+        --bg: #080b0d;
+        --panel: #11171c;
+        --panel-2: #172027;
+        --panel-3: #0c1115;
+        --line: #293740;
+        --line-soft: #1d2931;
+        --text: #edf2ee;
+        --muted: #9ca8a1;
+        --faint: #66746d;
+        --green: #4dd489;
+        --red: #f06065;
+        --amber: #d7a84a;
+        --blue: #66add8;
+        --radius: 6px;
+        --mono: "Aptos Mono", "SFMono-Regular", "Menlo", monospace;
+        --sans: "Aptos", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+        --display: "Bahnschrift", "DIN Condensed", "Aptos", "PingFang SC", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          linear-gradient(rgba(255, 255, 255, 0.026) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.022) 1px, transparent 1px),
+          var(--bg);
+        background-size: 34px 34px;
+        color: var(--text);
+        font-family: var(--sans);
+      }
+
+      a,
+      button {
+        color: inherit;
+        font: inherit;
+      }
+
+      button {
+        cursor: pointer;
+      }
+
+      .nav {
+        min-height: 64px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+        padding: 0 28px;
+        border-bottom: 1px solid rgba(237, 242, 238, 0.12);
+        background: rgba(8, 11, 13, 0.82);
+        backdrop-filter: blur(14px);
+        position: sticky;
+        top: 0;
+        z-index: 10;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-width: 0;
+      }
+
+      .mark {
+        width: 30px;
+        height: 30px;
+        display: grid;
+        place-items: center;
+        border: 1px solid var(--blue);
+        border-radius: 4px;
+        color: var(--blue);
+        font-family: var(--display);
+        font-weight: 800;
+      }
+
+      .brand strong {
+        font-family: var(--display);
+        font-size: 19px;
+      }
+
+      .links {
+        display: flex;
+        gap: 18px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .links a {
+        text-decoration: none;
+      }
+
+      .actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .lang-switch {
+        display: flex;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        overflow: hidden;
+        background: var(--panel-3);
+      }
+
+      .lang-switch button {
+        height: 36px;
+        min-width: 52px;
+        border: 0;
+        border-right: 1px solid var(--line);
+        background: transparent;
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 12px;
+      }
+
+      .lang-switch button:last-child {
+        border-right: 0;
+      }
+
+      .lang-switch button[aria-pressed="true"] {
+        background: var(--panel-2);
+        color: var(--text);
+      }
+
+      .btn {
+        min-height: 38px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 0 14px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: rgba(17, 23, 28, 0.95);
+        text-decoration: none;
+        font-weight: 700;
+      }
+
+      .btn.primary {
+        border-color: rgba(77, 212, 137, 0.56);
+        background: #143522;
+      }
+
+      .hero {
+        min-height: calc(100vh - 64px);
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(420px, 520px);
+        align-items: end;
+        gap: 42px;
+        padding: 86px 28px 54px;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .hero::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+          linear-gradient(90deg, rgba(8, 11, 13, 0.98) 0%, rgba(8, 11, 13, 0.58) 62%, rgba(8, 11, 13, 0.28) 100%),
+          linear-gradient(0deg, #080b0d 0%, rgba(8, 11, 13, 0) 34%);
+        pointer-events: none;
+      }
+
+      .market-tape {
+        position: absolute;
+        right: -72px;
+        top: 98px;
+        width: min(760px, 60vw);
+        display: grid;
+        gap: 11px;
+        transform: rotate(-3deg);
+        opacity: 0.78;
+      }
+
+      .tape-row {
+        display: grid;
+        grid-template-columns: 72px 1fr 72px;
+        gap: 14px;
+        align-items: center;
+        height: 42px;
+        padding: 0 14px;
+        border: 1px solid rgba(237, 242, 238, 0.1);
+        background: rgba(17, 23, 28, 0.74);
+        border-radius: var(--radius);
+        font-family: var(--mono);
+        font-size: 12px;
+      }
+
+      .spark {
+        height: 18px;
+        color: currentColor;
+        background:
+          linear-gradient(132deg, transparent 0 11%, currentColor 12% 14%, transparent 15% 28%, currentColor 29% 31%, transparent 32% 49%, currentColor 50% 52%, transparent 53% 100%);
+        opacity: 0.8;
+      }
+
+      .copy,
+      .strategy-image {
+        position: relative;
+        z-index: 1;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 9px;
+        color: var(--blue);
+        font-family: var(--mono);
+        font-size: 12px;
+        margin-bottom: 18px;
+      }
+
+      .eyebrow::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: var(--green);
+        box-shadow: 0 0 0 4px rgba(77, 212, 137, 0.12);
+      }
+
+      h1 {
+        margin: 0;
+        max-width: 920px;
+        font-family: var(--display);
+        font-size: clamp(48px, 8vw, 108px);
+        line-height: 0.91;
+        letter-spacing: 0;
+      }
+
+      [lang="zh-CN"] h1 {
+        max-width: 780px;
+        line-height: 1.02;
+      }
+
+      .lead {
+        max-width: 720px;
+        margin: 24px 0 0;
+        color: #cbd5cf;
+        font-size: clamp(18px, 2vw, 23px);
+        line-height: 1.52;
+      }
+
+      .hero-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 30px;
+      }
+
+      .locale-note {
+        width: min(720px, 100%);
+        margin-top: 34px;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .note {
+        border-top: 1px solid var(--line);
+        padding-top: 12px;
+      }
+
+      .note span {
+        display: block;
+        color: var(--muted);
+        font-size: 12px;
+        text-transform: uppercase;
+      }
+
+      .note strong {
+        display: block;
+        margin-top: 7px;
+        font-family: var(--mono);
+        font-size: 15px;
+      }
+
+      .strategy-image {
+        align-self: center;
+        border: 1px solid rgba(102, 173, 216, 0.28);
+        border-radius: var(--radius);
+        background:
+          radial-gradient(circle at 18% 16%, rgba(77, 212, 137, 0.12), transparent 30%),
+          radial-gradient(circle at 86% 28%, rgba(102, 173, 216, 0.14), transparent 34%),
+          rgba(12, 17, 21, 0.88);
+        box-shadow: 0 34px 110px rgba(0, 0, 0, 0.44);
+        backdrop-filter: blur(12px);
+        overflow: hidden;
+      }
+
+      .image-top {
+        height: 42px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 0 14px;
+        border-bottom: 1px solid var(--line);
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 11px;
+      }
+
+      .strategy-canvas {
+        min-height: 468px;
+        padding: 18px;
+        position: relative;
+        background:
+          linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+        background-size: 100% 20%, 12.5% 100%;
+      }
+
+      .strategy-canvas::before {
+        content: "AI";
+        position: absolute;
+        right: 24px;
+        top: 12px;
+        font-family: var(--display);
+        font-size: 112px;
+        color: rgba(237, 242, 238, 0.045);
+      }
+
+      .flow-card {
+        position: relative;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: rgba(17, 23, 28, 0.88);
+        padding: 14px;
+        margin-bottom: 12px;
+      }
+
+      .flow-card:nth-child(2) {
+        margin-left: 34px;
+      }
+
+      .flow-card:nth-child(3) {
+        margin-left: 68px;
+      }
+
+      .flow-card header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 10px;
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 11px;
+      }
+
+      .flow-card h3 {
+        margin: 0;
+        font-family: var(--display);
+        font-size: 24px;
+        line-height: 1.05;
+      }
+
+      .flow-card p {
+        margin: 8px 0 0;
+        color: var(--muted);
+        line-height: 1.45;
+      }
+
+      .code-block {
+        margin-top: 10px;
+        border: 1px solid var(--line-soft);
+        border-radius: var(--radius);
+        padding: 10px;
+        color: #bdd6c8;
+        background: rgba(5, 8, 10, 0.72);
+        font-family: var(--mono);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      .equity-strip {
+        height: 96px;
+        display: flex;
+        align-items: end;
+        gap: 6px;
+        margin-top: 10px;
+        padding-top: 10px;
+        border-top: 1px solid var(--line-soft);
+      }
+
+      .equity-bar {
+        width: 10px;
+        min-height: 12px;
+        height: var(--h);
+        border-radius: 2px 2px 0 0;
+        background: var(--c);
+      }
+
+      .result-row {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+        margin-top: 14px;
+      }
+
+      .result {
+        border-top: 1px solid var(--line);
+        padding-top: 9px;
+      }
+
+      .result span {
+        color: var(--muted);
+        font-size: 11px;
+        text-transform: uppercase;
+      }
+
+      .result strong {
+        display: block;
+        margin-top: 5px;
+        font-family: var(--mono);
+        font-size: 14px;
+      }
+
+      .workspace {
+        align-self: center;
+        border: 1px solid rgba(102, 173, 216, 0.26);
+        border-radius: var(--radius);
+        background: rgba(12, 17, 21, 0.82);
+        box-shadow: 0 34px 110px rgba(0, 0, 0, 0.44);
+        backdrop-filter: blur(12px);
+        overflow: hidden;
+      }
+
+      .workspace-header {
+        height: 42px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 0 14px;
+        border-bottom: 1px solid var(--line);
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 11px;
+      }
+
+      .terminal {
+        display: grid;
+        grid-template-columns: 172px 1fr;
+        min-height: 410px;
+      }
+
+      .watchlist {
+        border-right: 1px solid var(--line);
+        background: rgba(17, 23, 28, 0.82);
+      }
+
+      .watch-row {
+        display: grid;
+        grid-template-columns: 52px 1fr;
+        gap: 8px;
+        padding: 13px 12px;
+        border-bottom: 1px solid var(--line-soft);
+        font-family: var(--mono);
+        font-size: 12px;
+      }
+
+      .watch-row strong {
+        color: var(--text);
+      }
+
+      .positive {
+        color: var(--green);
+      }
+
+      .negative {
+        color: var(--red);
+      }
+
+      .panel-main {
+        display: grid;
+        grid-template-rows: auto minmax(220px, 1fr) auto;
+      }
+
+      .selected {
+        padding: 16px;
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+      }
+
+      .selected h2 {
+        margin: 0;
+        font-family: var(--display);
+        font-size: 42px;
+        line-height: 0.96;
+      }
+
+      .selected p {
+        margin: 5px 0 0;
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 12px;
+      }
+
+      .price {
+        text-align: right;
+        font-family: var(--mono);
+      }
+
+      .price strong {
+        display: block;
+        font-size: 24px;
+      }
+
+      .chart {
+        position: relative;
+        min-height: 240px;
+        background:
+          linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+        background-size: 100% 20%, 12.5% 100%;
+        overflow: hidden;
+      }
+
+      .chart::before {
+        content: "NVDA";
+        position: absolute;
+        left: 16px;
+        top: 12px;
+        font-family: var(--display);
+        font-size: 58px;
+        color: rgba(237, 242, 238, 0.045);
+      }
+
+      .bars {
+        position: absolute;
+        left: 18px;
+        right: 18px;
+        bottom: 24px;
+        height: 190px;
+        display: flex;
+        align-items: end;
+        gap: 6px;
+      }
+
+      .bar {
+        width: 9px;
+        min-height: 18px;
+        height: var(--h);
+        background: var(--c);
+        border-radius: 2px;
+      }
+
+      .insights {
+        padding: 14px 16px;
+        border-top: 1px solid var(--line);
+        display: grid;
+        gap: 9px;
+      }
+
+      .insight {
+        display: grid;
+        grid-template-columns: 86px 1fr;
+        gap: 10px;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .insight strong {
+        color: var(--text);
+        font-family: var(--mono);
+        font-size: 12px;
+      }
+
+      .section {
+        padding: 44px 28px 72px;
+        background: #0b1013;
+      }
+
+      .section-inner {
+        width: min(1160px, 100%);
+        margin: 0 auto;
+      }
+
+      .section-head {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 24px;
+        margin-bottom: 24px;
+      }
+
+      .section-head h2 {
+        margin: 0;
+        font-family: var(--display);
+        font-size: clamp(34px, 5vw, 62px);
+        line-height: 0.98;
+      }
+
+      .section-head p {
+        margin: 0;
+        width: min(480px, 100%);
+        color: var(--muted);
+        line-height: 1.58;
+      }
+
+      .decision-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        overflow: hidden;
+      }
+
+      .decision {
+        min-height: 220px;
+        padding: 20px;
+        border-right: 1px solid var(--line);
+        background: var(--panel);
+      }
+
+      .decision:last-child {
+        border-right: 0;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 24px;
+        padding: 0 8px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 11px;
+      }
+
+      .decision h3 {
+        margin: 40px 0 12px;
+        font-family: var(--display);
+        font-size: 27px;
+      }
+
+      .decision p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.55;
+      }
+
+      @media (max-width: 1060px) {
+        .hero {
+          grid-template-columns: 1fr;
+          align-items: start;
+        }
+
+        .strategy-image,
+        .workspace {
+          width: min(720px, 100%);
+        }
+
+        .market-tape {
+          width: 92vw;
+          opacity: 0.38;
+        }
+      }
+
+      @media (max-width: 760px) {
+        .nav {
+          padding: 10px 16px;
+          align-items: flex-start;
+          flex-direction: column;
+        }
+
+        .links {
+          display: none;
+        }
+
+        .hero,
+        .section {
+          padding-left: 16px;
+          padding-right: 16px;
+        }
+
+        .locale-note,
+        .decision-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .decision {
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+        }
+
+        .decision:last-child {
+          border-bottom: 0;
+        }
+
+        .terminal {
+          grid-template-columns: 1fr;
+        }
+
+        .flow-card,
+        .flow-card:nth-child(2),
+        .flow-card:nth-child(3) {
+          margin-left: 0;
+        }
+
+        .watchlist {
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+        }
+
+        .section-head {
+          display: block;
+        }
+
+        .section-head p {
+          margin-top: 14px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <nav class="nav">
+        <div class="brand">
+          <div class="mark">Q</div>
+          <strong>Trade Helper</strong>
+        </div>
+        <div class="links">
+          <a href="#watch" data-i18n="nav.watch"></a>
+          <a href="#ai" data-i18n="nav.ai"></a>
+          <a href="#workflow" data-i18n="nav.workflow"></a>
+        </div>
+        <div class="actions">
+          <div class="lang-switch" aria-label="Language">
+            <button type="button" data-lang="zh-CN" aria-pressed="true">中文</button>
+            <button type="button" data-lang="en-US" aria-pressed="false">EN</button>
+          </div>
+          <a class="btn primary" href="./prd001-terminal-prototype.html" data-i18n="nav.launch"></a>
+        </div>
+      </nav>
+
+      <section class="hero">
+        <div class="market-tape" aria-hidden="true">
+          <div class="tape-row positive"><strong>NVDA</strong><span class="spark"></span><span>+2.41%</span></div>
+          <div class="tape-row negative"><strong>MSFT</strong><span class="spark"></span><span>-0.32%</span></div>
+          <div class="tape-row positive"><strong>AAPL</strong><span class="spark"></span><span>+0.58%</span></div>
+          <div class="tape-row positive"><strong>AMD</strong><span class="spark"></span><span>+1.08%</span></div>
+        </div>
+
+        <div class="copy">
+          <div class="eyebrow" data-i18n="hero.eyebrow"></div>
+          <h1 data-i18n="hero.title"></h1>
+          <p class="lead" data-i18n="hero.lead"></p>
+          <div class="hero-actions">
+            <a class="btn primary" href="./prd001-terminal-prototype.html" data-i18n="hero.primaryCta"></a>
+            <a class="btn" href="#ai" data-i18n="hero.secondaryCta"></a>
+          </div>
+          <div class="locale-note">
+            <div class="note">
+              <span data-i18n="features.oneLabel"></span>
+              <strong data-i18n="features.oneValue"></strong>
+            </div>
+            <div class="note">
+              <span data-i18n="features.twoLabel"></span>
+              <strong data-i18n="features.twoValue"></strong>
+            </div>
+            <div class="note">
+              <span data-i18n="features.threeLabel"></span>
+              <strong data-i18n="features.threeValue"></strong>
+            </div>
+          </div>
+        </div>
+
+        <aside class="strategy-image" id="watch">
+          <div class="image-top">
+            <span data-i18n="visual.header"></span>
+            <span data-i18n="visual.status"></span>
+          </div>
+          <div class="strategy-canvas" id="ai">
+            <article class="flow-card">
+              <header>
+                <span data-i18n="visual.promptLabel"></span>
+                <span>NVDA / AAPL / MSFT</span>
+              </header>
+              <h3 data-i18n="visual.promptTitle"></h3>
+              <p data-i18n="visual.promptText"></p>
+            </article>
+
+            <article class="flow-card">
+              <header>
+                <span data-i18n="visual.strategyLabel"></span>
+                <span class="positive" data-i18n="visual.strategyStatus"></span>
+              </header>
+              <h3 data-i18n="visual.strategyTitle"></h3>
+              <p data-i18n="visual.strategyText"></p>
+              <div class="code-block">
+                <div>if signal.momentum &gt; threshold:</div>
+                <div>&nbsp;&nbsp;enter(position_size=risk_budget)</div>
+                <div>exit = trailing_stop(volatility)</div>
+              </div>
+            </article>
+
+            <article class="flow-card">
+              <header>
+                <span data-i18n="visual.backtestLabel"></span>
+                <span class="positive" data-i18n="visual.backtestStatus"></span>
+              </header>
+              <h3 data-i18n="visual.backtestTitle"></h3>
+              <p data-i18n="visual.backtestText"></p>
+              <div class="equity-strip" id="equity-bars"></div>
+              <div class="result-row">
+                <div class="result">
+                  <span data-i18n="visual.metricOne"></span>
+                  <strong>61.8%</strong>
+                </div>
+                <div class="result">
+                  <span data-i18n="visual.metricTwo"></span>
+                  <strong>1.42</strong>
+                </div>
+                <div class="result">
+                  <span data-i18n="visual.metricThree"></span>
+                  <strong>-4.7%</strong>
+                </div>
+              </div>
+            </article>
+          </div>
+        </aside>
+      </section>
+
+      <section class="section" id="workflow">
+        <div class="section-inner">
+          <div class="section-head">
+            <h2 data-i18n="workflow.title"></h2>
+            <p data-i18n="workflow.lead"></p>
+          </div>
+          <div class="decision-grid">
+            <article class="decision">
+              <span class="badge" data-i18n="workflow.card1Badge"></span>
+              <h3 data-i18n="workflow.card1Title"></h3>
+              <p data-i18n="workflow.card1Text"></p>
+            </article>
+            <article class="decision">
+              <span class="badge" data-i18n="workflow.card2Badge"></span>
+              <h3 data-i18n="workflow.card2Title"></h3>
+              <p data-i18n="workflow.card2Text"></p>
+            </article>
+            <article class="decision">
+              <span class="badge" data-i18n="workflow.card3Badge"></span>
+              <h3 data-i18n="workflow.card3Title"></h3>
+              <p data-i18n="workflow.card3Text"></p>
+            </article>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const messages = {
+        "zh-CN": {
+          nav: {
+            watch: "行情观察",
+            ai: "AI 研究",
+            workflow: "工作流",
+            launch: "进入终端"
+          },
+          hero: {
+            eyebrow: "AI 驱动的交易研究工作台",
+            title: "Trade Helper",
+            lead: "把市场机会变成可验证的交易策略。Trade Helper 用 AI 解读行情数据、生成策略规则，并自动产出回测程序，让每一个想法都能被数据检验。",
+            primaryCta: "开始使用",
+            secondaryCta: "查看策略流程"
+          },
+          features: {
+            oneLabel: "策略生成",
+            oneValue: "从行情到规则",
+            twoLabel: "回测程序",
+            twoValue: "按策略自动生成",
+            threeLabel: "验证迭代",
+            threeValue: "用结果修正想法"
+          },
+          visual: {
+            header: "AI STRATEGY WORKBENCH",
+            status: "research -> strategy -> backtest",
+            promptLabel: "观察输入",
+            promptTitle: "发现值得验证的交易想法",
+            promptText: "从行情数据、价格结构和成交量变化中提取可操作线索，而不是只停留在看盘。",
+            strategyLabel: "策略草案",
+            strategyStatus: "generated",
+            strategyTitle: "把假设转成规则",
+            strategyText: "AI 帮你把入场条件、风险预算、止损和退出逻辑整理成可审查的策略定义。",
+            backtestLabel: "回测验证",
+            backtestStatus: "ready",
+            backtestTitle: "生成程序并验证结果",
+            backtestText: "根据策略自动生成回测程序，快速查看胜率、收益风险比和最大回撤。",
+            metricOne: "胜率",
+            metricTwo: "收益风险比",
+            metricThree: "最大回撤"
+          },
+          workflow: {
+            title: "让每一个交易想法都能被验证。",
+            lead: "Trade Helper 不是替你下判断，而是把观察、策略生成、回测验证和复盘迭代串成一个稳定流程。",
+            card1Badge: "observe",
+            card1Title: "发现机会",
+            card1Text: "用行情数据和市场结构捕捉值得关注的异动，让 AI 帮你整理背景、驱动因素和待验证假设。",
+            card2Badge: "generate",
+            card2Title: "生成策略",
+            card2Text: "把模糊想法变成清晰策略：入场条件、过滤器、风控约束和退出规则都可以被拆解、修改和追问。",
+            card3Badge: "validate",
+            card3Title: "回测验证",
+            card3Text: "随时根据策略生成回测程序，用历史数据验证结果，并根据收益、回撤和稳定性继续迭代。"
+          }
+        },
+        "en-US": {
+          nav: {
+            watch: "Market Watch",
+            ai: "AI Research",
+            workflow: "Workflow",
+            launch: "Launch Terminal"
+          },
+          hero: {
+            eyebrow: "AI-powered trading research desk",
+            title: "Trade Helper",
+            lead: "Turn market opportunities into testable trading strategies. Trade Helper uses AI to interpret market data, generate strategy rules, and produce backtest programs so every idea can be checked against data.",
+            primaryCta: "Start Using",
+            secondaryCta: "View Strategy Flow"
+          },
+          features: {
+            oneLabel: "Strategy generation",
+            oneValue: "From market to rules",
+            twoLabel: "Backtest program",
+            twoValue: "Generated from strategy",
+            threeLabel: "Validation loop",
+            threeValue: "Refine with results"
+          },
+          visual: {
+            header: "AI STRATEGY WORKBENCH",
+            status: "research -> strategy -> backtest",
+            promptLabel: "Observation",
+            promptTitle: "Find an idea worth testing",
+            promptText: "Extract actionable clues from market data, price structure, and volume changes instead of stopping at market watching.",
+            strategyLabel: "Strategy draft",
+            strategyStatus: "generated",
+            strategyTitle: "Turn hypotheses into rules",
+            strategyText: "AI helps organize entries, risk budget, stops, and exits into a reviewable strategy definition.",
+            backtestLabel: "Backtest",
+            backtestStatus: "ready",
+            backtestTitle: "Generate code and validate",
+            backtestText: "Create a backtest program from the strategy and inspect win rate, risk reward, and max drawdown.",
+            metricOne: "Win rate",
+            metricTwo: "Risk reward",
+            metricThree: "Max drawdown"
+          },
+          workflow: {
+            title: "Make every trading idea testable.",
+            lead: "Trade Helper does not replace judgment. It connects observation, strategy generation, backtest validation, and review into one repeatable workflow.",
+            card1Badge: "observe",
+            card1Title: "Find Opportunities",
+            card1Text: "Use market data and structure to spot movement worth investigating, then let AI organize context, drivers, and testable hypotheses.",
+            card2Badge: "generate",
+            card2Title: "Generate Strategies",
+            card2Text: "Turn rough ideas into clear strategies: entries, filters, risk constraints, and exit rules can be reviewed, adjusted, and challenged.",
+            card3Badge: "validate",
+            card3Title: "Backtest Validation",
+            card3Text: "Generate a backtest program from the strategy, validate it on historical data, and iterate based on returns, drawdown, and stability."
+          }
+        }
+      };
+
+      function getMessage(locale, key) {
+        return key.split(".").reduce((value, part) => value?.[part], messages[locale]) || key;
+      }
+
+      function renderBars() {
+        const bars = document.querySelector("#equity-bars");
+        bars.innerHTML = "";
+        Array.from({ length: 24 }).forEach((_, index) => {
+          const el = document.createElement("span");
+          el.className = "equity-bar";
+          el.style.setProperty("--h", `${18 + Math.abs(Math.sin(index * 0.36) + index * 0.035) * 54}px`);
+          el.style.setProperty("--c", Math.sin(index * 0.62) > -0.35 ? "var(--green)" : "var(--red)");
+          bars.appendChild(el);
+        });
+      }
+
+      function setLocale(locale) {
+        document.documentElement.lang = locale;
+        localStorage.setItem("trade-helper.demo.locale", locale);
+
+        document.querySelectorAll("[data-i18n]").forEach((node) => {
+          node.textContent = getMessage(locale, node.dataset.i18n);
+        });
+
+        document.querySelectorAll("[data-lang]").forEach((button) => {
+          button.setAttribute("aria-pressed", String(button.dataset.lang === locale));
+        });
+
+      }
+
+      document.querySelectorAll("[data-lang]").forEach((button) => {
+        button.addEventListener("click", () => setLocale(button.dataset.lang));
+      });
+
+      renderBars();
+      setLocale(localStorage.getItem("trade-helper.demo.locale") || "zh-CN");
+    </script>
+  </body>
+</html>

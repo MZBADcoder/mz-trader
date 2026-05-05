@@ -11,6 +11,12 @@
 - Treat this as a greenfield frontend and establish structure before adding feature code.
 - Tech Stack: React + TypeScript + Vite.
 
+## Frontend Planning Docs
+
+- Frontend evolution and design documents live directly under `docs/frontend-evolution/`.
+- Static HTML prototypes live under `docs/frontend-evolution/prototypes/`.
+- Do not introduce a separate design subdirectory under `docs/frontend-evolution/`.
+
 ## Recommended Default Structure
 
 Use the `react-structure` default: a lightweight Feature-Sliced layout that keeps bootstrapping in `app/`, route screens in `pages/`, user capabilities in `features/`, domain-facing client logic in `entities/`, and reusable primitives in `shared/`.

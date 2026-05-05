@@ -1,0 +1,946 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PRD001 Market Watch Terminal Prototype</title>
+    <style>
+      :root {
+        --bg: #0b0e11;
+        --panel: #11161b;
+        --panel-2: #151b20;
+        --panel-3: #1b2329;
+        --line: #26323a;
+        --line-soft: #1d272e;
+        --text: #e7ece8;
+        --muted: #94a19a;
+        --faint: #65736c;
+        --green: #4bd38a;
+        --red: #ef5f64;
+        --amber: #d4a449;
+        --blue: #62a9d8;
+        --ink: #07090b;
+        --shadow: 0 24px 70px rgba(0, 0, 0, 0.32);
+        --radius: 6px;
+        --mono: "Aptos Mono", "SFMono-Regular", "Menlo", monospace;
+        --sans: "Aptos", "Segoe UI", sans-serif;
+        --display: "Bahnschrift", "DIN Condensed", "Aptos", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+          var(--bg);
+        background-size: 28px 28px;
+        color: var(--text);
+        font-family: var(--sans);
+      }
+
+      button,
+      input {
+        font: inherit;
+      }
+
+      button {
+        color: inherit;
+        cursor: pointer;
+      }
+
+      .terminal {
+        min-height: 100vh;
+        display: grid;
+        grid-template-rows: 52px minmax(0, 1fr);
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid var(--line);
+        background: rgba(11, 14, 17, 0.92);
+        padding: 0 18px;
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        backdrop-filter: blur(14px);
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-width: 0;
+      }
+
+      .brand-mark {
+        width: 26px;
+        height: 26px;
+        border: 1px solid var(--blue);
+        border-radius: 4px;
+        display: grid;
+        place-items: center;
+        color: var(--blue);
+        font-family: var(--display);
+        font-weight: 700;
+      }
+
+      .brand h1 {
+        margin: 0;
+        font-family: var(--display);
+        font-size: 19px;
+        font-weight: 700;
+      }
+
+      .session-line {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 12px;
+      }
+
+      .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: var(--green);
+        box-shadow: 0 0 0 4px rgba(75, 211, 138, 0.12);
+      }
+
+      .shell {
+        display: grid;
+        grid-template-columns: 328px minmax(420px, 1fr);
+        min-height: 0;
+      }
+
+      .left,
+      .center {
+        min-width: 0;
+        min-height: 0;
+      }
+
+      .left {
+        background: rgba(17, 22, 27, 0.96);
+      }
+
+      .left {
+        border-right: 1px solid var(--line);
+        display: grid;
+        grid-template-rows: auto auto minmax(0, 1fr);
+      }
+
+      .center {
+        display: grid;
+        grid-template-rows: auto auto minmax(360px, 1fr) auto;
+        overflow: hidden;
+      }
+
+      .section {
+        padding: 16px;
+        border-bottom: 1px solid var(--line-soft);
+      }
+
+      .section-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 12px;
+      }
+
+      .section-title h2,
+      .section-title h3 {
+        margin: 0;
+        font-family: var(--display);
+        font-size: 16px;
+      }
+
+      .count {
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 12px;
+      }
+
+      .add-form {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 42px;
+        gap: 8px;
+      }
+
+      .input {
+        min-width: 0;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--ink);
+        color: var(--text);
+        height: 38px;
+        padding: 0 11px;
+        outline: none;
+        text-transform: uppercase;
+      }
+
+      .input:focus {
+        border-color: var(--blue);
+      }
+
+      .icon-btn,
+      .pill,
+      .danger-btn {
+        border: 1px solid var(--line);
+        background: var(--panel-2);
+        color: var(--text);
+        border-radius: var(--radius);
+        min-height: 34px;
+      }
+
+      .icon-btn:hover,
+      .pill:hover {
+        border-color: var(--blue);
+      }
+
+      .icon-btn {
+        font-family: var(--mono);
+        font-size: 18px;
+      }
+
+      .watchlist {
+        overflow: auto;
+      }
+
+      .row {
+        display: grid;
+        grid-template-columns: 64px minmax(82px, 1fr) 72px 30px;
+        grid-template-areas:
+          "ticker price change remove"
+          "name name name name";
+        column-gap: 8px;
+        row-gap: 4px;
+        align-items: center;
+        min-height: 64px;
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--line-soft);
+        background: transparent;
+        color: var(--text);
+      }
+
+      .row[data-selected="true"] {
+        background: #182027;
+        box-shadow: inset 3px 0 0 var(--blue);
+      }
+
+      .ticker {
+        grid-area: ticker;
+        color: var(--text);
+        font-family: var(--display);
+        font-size: 18px;
+        font-weight: 700;
+      }
+
+      .price {
+        grid-area: price;
+        text-align: right;
+        font-family: var(--mono);
+        font-size: 13px;
+      }
+
+      .row .price {
+        color: var(--text);
+      }
+
+      .row-change {
+        grid-area: change;
+        text-align: right;
+        font-family: var(--mono);
+        font-size: 13px;
+      }
+
+      .meta-small {
+        grid-area: name;
+        padding-left: 0;
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 11px;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .positive {
+        color: var(--green);
+      }
+
+      .negative {
+        color: var(--red);
+      }
+
+      .danger-btn {
+        grid-area: remove;
+        color: var(--muted);
+        width: 28px;
+        height: 28px;
+        min-height: 28px;
+        font-family: var(--mono);
+      }
+
+      .danger-btn:hover {
+        color: var(--red);
+        border-color: var(--red);
+      }
+
+      .hero-strip {
+        padding: 20px 22px 14px;
+        border-bottom: 1px solid var(--line);
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 18px;
+        background:
+          linear-gradient(90deg, rgba(98, 169, 216, 0.08), transparent 54%),
+          rgba(13, 17, 21, 0.9);
+      }
+
+      .symbol-block {
+        min-width: 0;
+      }
+
+      .symbol-line {
+        display: flex;
+        align-items: end;
+        gap: 14px;
+        flex-wrap: wrap;
+      }
+
+      .symbol-line h2 {
+        margin: 0;
+        font-family: var(--display);
+        font-size: 46px;
+        line-height: 0.92;
+      }
+
+      .last-price {
+        font-family: var(--mono);
+        font-size: 27px;
+      }
+
+      .subtitle {
+        margin-top: 8px;
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 12px;
+      }
+
+      .kpis {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(80px, 1fr));
+        gap: 8px;
+        min-width: 430px;
+      }
+
+      .kpi {
+        border-left: 1px solid var(--line);
+        padding: 2px 10px;
+      }
+
+      .label {
+        color: var(--muted);
+        font-size: 11px;
+        text-transform: uppercase;
+      }
+
+      .value {
+        margin-top: 6px;
+        font-family: var(--mono);
+        font-size: 15px;
+      }
+
+      .controls {
+        padding: 12px 22px;
+        border-bottom: 1px solid var(--line-soft);
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        flex-wrap: wrap;
+        background: rgba(17, 22, 27, 0.72);
+      }
+
+      .segmented {
+        display: flex;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        overflow: hidden;
+        background: var(--ink);
+      }
+
+      .segmented button {
+        border: 0;
+        border-right: 1px solid var(--line);
+        background: transparent;
+        color: var(--muted);
+        min-width: 42px;
+        height: 32px;
+        padding: 0 10px;
+        font-family: var(--mono);
+        font-size: 12px;
+      }
+
+      .segmented button.wide {
+        min-width: 56px;
+      }
+
+      .segmented button:last-child {
+        border-right: 0;
+      }
+
+      .segmented button[aria-pressed="true"] {
+        background: var(--panel-3);
+        color: var(--text);
+      }
+
+      .chart-stage {
+        min-height: 0;
+        padding: 20px 22px;
+        overflow: hidden;
+      }
+
+      .chart {
+        height: 100%;
+        min-height: 360px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background:
+          linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+          #0c1115;
+        background-size: 100% 25%, 8.333% 100%;
+        position: relative;
+        overflow: hidden;
+        box-shadow: var(--shadow);
+      }
+
+      .indicator-layer {
+        position: absolute;
+        inset: 28px 58px 118px 44px;
+        pointer-events: none;
+        opacity: 0.86;
+      }
+
+      .indicator-layer svg {
+        width: 100%;
+        height: 100%;
+        overflow: visible;
+      }
+
+      .indicator-line {
+        fill: none;
+        stroke-width: 2.2;
+        vector-effect: non-scaling-stroke;
+      }
+
+      .indicator-line.ma30 {
+        stroke: var(--blue);
+      }
+
+      .indicator-line.ma60 {
+        stroke: var(--amber);
+      }
+
+      .indicator-line.ma200 {
+        stroke: #c6d8df;
+        opacity: 0.72;
+      }
+
+      .indicator-line.boll {
+        stroke: rgba(167, 128, 230, 0.72);
+        stroke-dasharray: 5 5;
+      }
+
+      .price-axis {
+        position: absolute;
+        top: 24px;
+        right: 12px;
+        display: grid;
+        gap: 33px;
+        color: var(--faint);
+        font-family: var(--mono);
+        font-size: 11px;
+      }
+
+      .candles {
+        position: absolute;
+        inset: 34px 58px 130px 44px;
+        display: flex;
+        align-items: end;
+        gap: 6px;
+      }
+
+      .candle {
+        width: 8px;
+        height: var(--h);
+        min-height: 18px;
+        background: var(--c);
+        position: relative;
+        border-radius: 1px;
+      }
+
+      .candle::before {
+        content: "";
+        position: absolute;
+        left: 3px;
+        top: calc(var(--wick) * -1px);
+        width: 2px;
+        height: calc(var(--wick) * 2px + 100%);
+        background: var(--c);
+        opacity: 0.88;
+      }
+
+      .price-panel-separator {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 98px;
+        height: 1px;
+        background: var(--line);
+      }
+
+      .volume-bars {
+        position: absolute;
+        left: 44px;
+        right: 58px;
+        bottom: 18px;
+        height: 72px;
+        display: flex;
+        align-items: end;
+        gap: 6px;
+        opacity: 0.72;
+      }
+
+      .vol {
+        width: 8px;
+        height: var(--v);
+        background: var(--c);
+        border-radius: 1px 1px 0 0;
+      }
+
+      .volume-label {
+        position: absolute;
+        left: 12px;
+        bottom: 70px;
+        color: var(--faint);
+        font-family: var(--mono);
+        font-size: 11px;
+        text-transform: uppercase;
+      }
+
+      .watermark {
+        position: absolute;
+        left: 22px;
+        top: 18px;
+        font-family: var(--display);
+        font-size: 58px;
+        color: rgba(231, 236, 232, 0.045);
+        pointer-events: none;
+      }
+
+      .chart-footer {
+        padding: 0 22px 18px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 14px;
+        color: var(--muted);
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        min-height: 26px;
+        padding: 0 9px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 11px;
+      }
+
+      .badge.green {
+        color: var(--green);
+        border-color: rgba(75, 211, 138, 0.4);
+      }
+
+      .badge.amber {
+        color: var(--amber);
+        border-color: rgba(212, 164, 73, 0.42);
+      }
+
+      .indicator-tools {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .indicator-title {
+        color: var(--muted);
+        font-family: var(--display);
+        font-size: 14px;
+      }
+
+      .indicator-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        min-height: 28px;
+        padding: 0 9px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: rgba(17, 22, 27, 0.86);
+        color: var(--text);
+        font-family: var(--mono);
+        font-size: 12px;
+      }
+
+      .indicator-pill .swatch {
+        width: 18px;
+        height: 2px;
+        border-radius: 999px;
+        background: var(--line);
+      }
+
+      .indicator-pill .blue {
+        background: var(--blue);
+      }
+
+      .indicator-pill .amber {
+        background: var(--amber);
+      }
+
+      .indicator-pill .white {
+        background: #c6d8df;
+      }
+
+      .indicator-pill .violet {
+        background: #a780e6;
+      }
+
+      .adjustment-note {
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 12px;
+      }
+
+      @media (max-width: 1100px) {
+        .shell {
+          grid-template-columns: 292px minmax(0, 1fr);
+        }
+
+        .kpis {
+          min-width: 0;
+          grid-template-columns: repeat(2, minmax(90px, 1fr));
+        }
+      }
+
+      @media (max-width: 760px) {
+        .terminal {
+          grid-template-rows: auto minmax(0, 1fr);
+        }
+
+        .topbar,
+        .hero-strip {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+
+        .shell,
+        .center {
+          display: block;
+        }
+
+        .left {
+          border: 0;
+        }
+
+        .kpis {
+          grid-template-columns: 1fr 1fr;
+          width: 100%;
+        }
+
+        .symbol-line h2 {
+          font-size: 38px;
+        }
+
+        .chart {
+          min-height: 320px;
+        }
+
+        .row {
+          grid-template-columns: 56px minmax(76px, 1fr) 62px 30px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="terminal">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-mark">T</div>
+          <h1>Trader Terminal</h1>
+        </div>
+        <div class="session-line">
+          <span class="status-dot"></span>
+          <span id="clock">REGULAR · 15M DELAY</span>
+        </div>
+      </header>
+
+      <section class="shell">
+        <aside class="left">
+          <div class="section">
+            <div class="section-title">
+              <h2>Watchlist</h2>
+              <span class="count"><span id="watch-count">5</span>/50</span>
+            </div>
+            <form class="add-form" id="add-form">
+              <input class="input" id="ticker-input" maxlength="8" placeholder="Ticker" aria-label="Ticker" />
+              <button class="icon-btn" type="submit" title="Add ticker">+</button>
+            </form>
+          </div>
+
+          <div class="section">
+            <div class="section-title">
+              <h3>Snapshot Feed</h3>
+              <span class="badge green">fresh</span>
+            </div>
+            <div class="meta-small">last update · 2026-05-05 09:45:20 ET</div>
+          </div>
+
+          <div class="watchlist" id="watchlist"></div>
+        </aside>
+
+        <section class="center">
+          <div class="hero-strip">
+            <div class="symbol-block">
+              <div class="symbol-line">
+                <h2 id="selected-symbol">NVDA</h2>
+                <span class="last-price" id="selected-price">913.56</span>
+                <span class="badge green" id="selected-change">+2.41%</span>
+              </div>
+              <div class="subtitle" id="selected-subtitle">NVIDIA Corp · regular session · split adjusted</div>
+            </div>
+
+            <div class="kpis">
+              <div class="kpi">
+                <div class="label">Open</div>
+                <div class="value" id="kpi-open">892.10</div>
+              </div>
+              <div class="kpi">
+                <div class="label">High</div>
+                <div class="value" id="kpi-high">917.30</div>
+              </div>
+              <div class="kpi">
+                <div class="label">Low</div>
+                <div class="value" id="kpi-low">884.22</div>
+              </div>
+              <div class="kpi">
+                <div class="label">Volume</div>
+                <div class="value" id="kpi-volume">48.2M</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="controls">
+            <div class="segmented" aria-label="Resolution">
+              <button class="wide" aria-pressed="false">line</button>
+              <button aria-pressed="false">1m</button>
+              <button aria-pressed="true">5m</button>
+              <button aria-pressed="false">15m</button>
+              <button aria-pressed="false">30m</button>
+              <button aria-pressed="false">60m</button>
+              <button aria-pressed="false">1D</button>
+              <button aria-pressed="false">1W</button>
+              <button aria-pressed="false">1M</button>
+            </div>
+            <div class="segmented" aria-label="Session">
+              <button aria-pressed="false">pre</button>
+              <button aria-pressed="true">regular</button>
+              <button aria-pressed="false">after</button>
+            </div>
+            <div class="segmented" aria-label="Adjustment">
+              <button aria-pressed="true">adjusted</button>
+              <button aria-pressed="false">raw</button>
+            </div>
+            <span class="adjustment-note">price basis</span>
+          </div>
+
+          <div class="chart-stage">
+            <div class="chart">
+              <div class="watermark" id="chart-watermark">NVDA</div>
+              <div class="price-axis">
+                <span>918.00</span>
+                <span>907.00</span>
+                <span>896.00</span>
+                <span>885.00</span>
+              </div>
+              <div class="candles" id="candles"></div>
+              <div class="indicator-layer" aria-hidden="true">
+                <svg viewBox="0 0 720 260" preserveAspectRatio="none">
+                  <path class="indicator-line boll" d="M0,78 C80,54 132,88 202,70 C284,48 334,86 406,76 C492,61 556,94 720,68" />
+                  <path class="indicator-line ma30" d="M0,146 C78,132 122,108 190,119 C262,130 322,96 396,112 C474,130 536,103 604,126 C654,142 686,122 720,112" />
+                  <path class="indicator-line ma60" d="M0,174 C98,158 170,153 242,160 C322,168 386,142 462,152 C548,166 628,148 720,138" />
+                  <path class="indicator-line ma200" d="M0,204 C120,194 240,190 360,184 C492,177 602,171 720,166" />
+                </svg>
+              </div>
+              <div class="price-panel-separator"></div>
+              <div class="volume-label">VOL</div>
+              <div class="volume-bars" id="volumes"></div>
+            </div>
+          </div>
+
+          <div class="chart-footer">
+            <div class="indicator-tools">
+              <span class="indicator-title">Indicators</span>
+              <span class="indicator-pill"><span class="swatch violet"></span>BOLL</span>
+              <span class="indicator-pill"><span class="swatch blue"></span>MA 30</span>
+              <span class="indicator-pill"><span class="swatch amber"></span>MA 60</span>
+              <span class="indicator-pill"><span class="swatch white"></span>MA 200</span>
+            </div>
+            <span class="adjustment-note">volume overlay on</span>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script>
+      const rows = [
+        { ticker: "NVDA", price: 913.56, change: 2.41, open: 892.1, high: 917.3, low: 884.22, volume: "48.2M", name: "NVIDIA Corp" },
+        { ticker: "AAPL", price: 212.34, change: 0.58, open: 211.1, high: 213.0, low: 210.6, volume: "45.6M", name: "Apple Inc" },
+        { ticker: "MSFT", price: 428.91, change: -0.32, open: 431.4, high: 433.2, low: 427.9, volume: "21.4M", name: "Microsoft Corp" },
+        { ticker: "TSLA", price: 174.29, change: -1.12, open: 178.2, high: 179.1, low: 172.8, volume: "73.9M", name: "Tesla Inc" },
+        { ticker: "AMD", price: 156.78, change: 1.08, open: 154.6, high: 157.4, low: 152.9, volume: "37.1M", name: "Advanced Micro Devices" }
+      ];
+
+      let selected = rows[0].ticker;
+
+      const watchlist = document.querySelector("#watchlist");
+      const candles = document.querySelector("#candles");
+      const volumes = document.querySelector("#volumes");
+
+      function fmt(value) {
+        return Number(value).toFixed(2);
+      }
+
+      function renderRows() {
+        watchlist.innerHTML = "";
+        rows.forEach((row) => {
+          const button = document.createElement("button");
+          button.className = "row";
+          button.type = "button";
+          button.dataset.selected = row.ticker === selected ? "true" : "false";
+          button.innerHTML = `
+            <span class="ticker">${row.ticker}</span>
+            <span class="price">${fmt(row.price)}</span>
+            <span class="meta-small">${row.name}</span>
+            <span class="row-change ${row.change >= 0 ? "positive" : "negative"}">${row.change >= 0 ? "+" : ""}${fmt(row.change)}%</span>
+            <span class="danger-btn" title="Remove">x</span>
+          `;
+          button.addEventListener("click", (event) => {
+            if (event.target.classList.contains("danger-btn")) {
+              const index = rows.findIndex((item) => item.ticker === row.ticker);
+              rows.splice(index, 1);
+              selected = rows[0]?.ticker || "";
+            } else {
+              selected = row.ticker;
+            }
+            update();
+          });
+          watchlist.appendChild(button);
+        });
+        document.querySelector("#watch-count").textContent = rows.length;
+      }
+
+      function renderSelected() {
+        const row = rows.find((item) => item.ticker === selected) || rows[0];
+        if (!row) return;
+        document.querySelector("#selected-symbol").textContent = row.ticker;
+        document.querySelector("#chart-watermark").textContent = row.ticker;
+        document.querySelector("#selected-price").textContent = fmt(row.price);
+        const change = document.querySelector("#selected-change");
+        change.textContent = `${row.change >= 0 ? "+" : ""}${fmt(row.change)}%`;
+        change.className = `badge ${row.change >= 0 ? "green" : ""}`;
+        document.querySelector("#selected-subtitle").textContent = `${row.name} · regular session · split adjusted`;
+        document.querySelector("#kpi-open").textContent = fmt(row.open);
+        document.querySelector("#kpi-high").textContent = fmt(row.high);
+        document.querySelector("#kpi-low").textContent = fmt(row.low);
+        document.querySelector("#kpi-volume").textContent = row.volume;
+      }
+
+      function renderChart() {
+        candles.innerHTML = "";
+        volumes.innerHTML = "";
+        Array.from({ length: 42 }).forEach((_, index) => {
+          const wave = Math.sin(index * 0.58) + Math.cos(index * 0.19);
+          const up = wave > -0.16;
+          const height = 18 + Math.abs(Math.sin(index * 0.47)) * 92;
+          const wick = 6 + Math.abs(Math.cos(index * 0.61)) * 22;
+          const volume = 10 + Math.abs(Math.sin(index * 0.34) + Math.cos(index * 0.18)) * 35;
+          const color = up ? "var(--green)" : "var(--red)";
+          const candle = document.createElement("span");
+          candle.className = "candle";
+          candle.style.setProperty("--h", `${height}px`);
+          candle.style.setProperty("--wick", `${wick}`);
+          candle.style.setProperty("--c", color);
+          candles.appendChild(candle);
+
+          const vol = document.createElement("span");
+          vol.className = "vol";
+          vol.style.setProperty("--v", `${volume}px`);
+          vol.style.setProperty("--c", color);
+          volumes.appendChild(vol);
+        });
+      }
+
+      function update() {
+        renderRows();
+        renderSelected();
+        renderChart();
+      }
+
+      document.querySelector("#add-form").addEventListener("submit", (event) => {
+        event.preventDefault();
+        const input = document.querySelector("#ticker-input");
+        const ticker = input.value.trim().toUpperCase();
+        if (!ticker || rows.some((row) => row.ticker === ticker) || rows.length >= 50) return;
+        rows.push({
+          ticker,
+          price: 100 + Math.random() * 500,
+          change: Math.random() * 4 - 2,
+          open: 100 + Math.random() * 500,
+          high: 100 + Math.random() * 520,
+          low: 90 + Math.random() * 480,
+          volume: `${(10 + Math.random() * 80).toFixed(1)}M`,
+          name: "Prototype Security"
+        });
+        selected = ticker;
+        input.value = "";
+        update();
+      });
+
+      document.querySelectorAll(".segmented button").forEach((button) => {
+        button.addEventListener("click", () => {
+          button.parentElement.querySelectorAll("button").forEach((item) => item.setAttribute("aria-pressed", "false"));
+          button.setAttribute("aria-pressed", "true");
+        });
+      });
+
+      update();
+    </script>
+  </body>
+</html>
