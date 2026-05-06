@@ -1,0 +1,2 @@
+// Watchlist entity public API.
+
