@@ -1,4 +1,9 @@
-export function AuthPage() {
-  return null
-}
+import { AuthPanel, RedirectAuthenticated } from '@/features/auth'
 
+export function AuthPage() {
+  return (
+    <RedirectAuthenticated>
+      <AuthPanel />
+    </RedirectAuthenticated>
+  )
+}

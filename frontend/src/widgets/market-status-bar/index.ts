@@ -1,2 +1,1 @@
-// Market status bar widget public API.
-
+export { MarketStatusBar } from './ui/market-status-bar'

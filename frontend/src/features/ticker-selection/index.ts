@@ -1,2 +1,1 @@
-// Ticker selection feature public API.
-
+export { firstTicker, nextTickerAfterRemoval } from './model/selection'

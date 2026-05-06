@@ -1,2 +1,22 @@
-{}
-
+{
+  "navCapabilities": "Capabilities",
+  "navWorkflow": "Workflow",
+  "heroEyebrow": "AI-assisted trading research terminal",
+  "heroTitle": "Trade Helper",
+  "heroCopy": "Find opportunities in price structure, volume, and market movement, turn trading ideas into strategy rules, then generate backtests to validate win rate, risk-reward, and drawdown.",
+  "primaryCta": "Start now",
+  "secondaryCta": "View workflow",
+  "visualTitle": "Strategy workbench",
+  "visualDraft": "AI strategy draft",
+  "visualBacktest": "Backtest program",
+  "visualValidation": "Validation report",
+  "capabilityTitle": "A research loop from signal to validation",
+  "observeTitle": "Observe",
+  "observeText": "Focus on price structure, market session, volume, and watchlist snapshots.",
+  "generateTitle": "Generate",
+  "generateText": "Convert ideas into reviewable and editable strategy rules.",
+  "backtestTitle": "Backtest",
+  "backtestText": "Generate code and validate return, risk, and stability with history.",
+  "iterateTitle": "Iterate",
+  "iterateText": "Refine parameters, conditions, and research direction from results."
+}

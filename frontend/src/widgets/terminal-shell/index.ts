@@ -1,2 +1,1 @@
-// Terminal shell widget public API.
-
+export { TerminalShell } from './ui/terminal-shell'

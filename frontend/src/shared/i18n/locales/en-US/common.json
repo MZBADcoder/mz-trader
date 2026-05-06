@@ -1,2 +1,18 @@
-{}
-
+{
+  "brand": "Trade Helper",
+  "language": "Language",
+  "zh": "中文",
+  "en": "English",
+  "login": "Log in",
+  "register": "Register",
+  "logout": "Log out",
+  "terminal": "Open terminal",
+  "home": "Home",
+  "start": "Start",
+  "loading": "Loading",
+  "retry": "Retry",
+  "save": "Save",
+  "cancel": "Cancel",
+  "error": "Request failed",
+  "sessionExpired": "Your session expired. Please log in again."
+}

@@ -1,2 +1,22 @@
-{}
-
+{
+  "navCapabilities": "能力",
+  "navWorkflow": "策略流程",
+  "heroEyebrow": "AI 辅助交易研究终端",
+  "heroTitle": "Trade Helper",
+  "heroCopy": "从行情结构、成交量和价格变化中发现机会，把交易想法整理成策略规则，再生成回测程序验证胜率、收益风险比与回撤。",
+  "primaryCta": "开始使用",
+  "secondaryCta": "查看策略流程",
+  "visualTitle": "策略工作台",
+  "visualDraft": "AI strategy draft",
+  "visualBacktest": "Backtest program",
+  "visualValidation": "Validation report",
+  "capabilityTitle": "从观察到验证的研究闭环",
+  "observeTitle": "观察",
+  "observeText": "聚焦价格结构、市场时段、成交量和 watchlist 快照。",
+  "generateTitle": "生成",
+  "generateText": "把想法整理成可审查、可修改的策略规则。",
+  "backtestTitle": "回测",
+  "backtestText": "生成程序，用历史数据验证收益、风险和稳定性。",
+  "iterateTitle": "迭代",
+  "iterateText": "围绕结果继续调整参数、条件和研究方向。"
+}

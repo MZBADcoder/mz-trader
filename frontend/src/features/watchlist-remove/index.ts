@@ -1,2 +1,1 @@
-// Watchlist remove feature public API.
-
+export { removeWatchlistItem } from './model/remove-watchlist-item'

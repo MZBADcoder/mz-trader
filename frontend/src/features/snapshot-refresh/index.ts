@@ -1,2 +1,5 @@
-// Snapshot refresh feature public API.
-
+export {
+  type SnapshotPollingResult,
+  type SnapshotRefreshState,
+  useSnapshotPolling,
+} from './model/use-snapshot-polling'

@@ -1,2 +1,1 @@
-// Homepage hero widget public API.
-
+export { HomepageHero } from './ui/homepage-hero'

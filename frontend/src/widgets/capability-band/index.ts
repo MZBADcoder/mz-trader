@@ -1,2 +1,1 @@
-// Homepage capability band widget public API.
-
+export { CapabilityBand } from './ui/capability-band'

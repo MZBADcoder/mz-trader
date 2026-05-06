@@ -1,2 +1,1 @@
-// Chart workspace widget public API.
-
+export { ChartWorkspace } from './ui/chart-workspace'

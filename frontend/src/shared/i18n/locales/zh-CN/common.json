@@ -1,2 +1,18 @@
-{}
-
+{
+  "brand": "Trade Helper",
+  "language": "语言",
+  "zh": "中文",
+  "en": "English",
+  "login": "登录",
+  "register": "注册",
+  "logout": "退出",
+  "terminal": "进入终端",
+  "home": "首页",
+  "start": "开始使用",
+  "loading": "加载中",
+  "retry": "重试",
+  "save": "保存",
+  "cancel": "取消",
+  "error": "请求失败",
+  "sessionExpired": "登录已失效，请重新登录。"
+}

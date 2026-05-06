@@ -1,2 +1,1 @@
-// Watchlist add feature public API.
-
+export { addWatchlistItem } from './model/add-watchlist-item'

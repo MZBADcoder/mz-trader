@@ -1,2 +1,1 @@
-// Watchlist panel widget public API.
-
+export { WatchlistPanel } from './ui/watchlist-panel'
