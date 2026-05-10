@@ -1,6 +1,6 @@
 # FE-0001 - PRD001 Trade Helper 前端设计
 
-> 状态：草稿  
+> 状态：Completed
 > 关联 PRD：`docs/prd/PRD-0001-market-watch.md`  
 > 关联后端演进：`docs/backend-evolution/BE-0001-auth-watchlist.md`、`docs/backend-evolution/BE-0002-snapshots-fanout.md`、`docs/backend-evolution/BE-0003-bars-query-materialization.md`  
 > 原型：
@@ -239,7 +239,7 @@ sequenceDiagram
   UI->>WL: GET /api/v1/watchlist
   WL-->>UI: items
   UI->>MD: GET /api/v1/market-data/snapshots?tickers=AAPL,NVDA
-  UI->>MD: GET /api/v1/market-data/bars?ticker=AAPL&resolution=5m&session=regular&count_back=120
+  UI->>MD: GET /api/v1/market-data/bars?ticker=AAPL&resolution=5m&session=regular&count_back=260
 ```
 
 ### 8.2 本期数据获取方式
@@ -408,6 +408,13 @@ flowchart LR
 - 排序完成后，如果后端已有排序接口，则提交新顺序并以服务端返回为准。
 - 如果实现阶段后端尚未提供排序接口，前端不应伪造长期持久化能力；需要把排序持久化接口作为依赖补齐。
 
+当前实现：
+
+- 后端已通过 BE-0004 提供 `PATCH /api/v1/watchlist`，请求体为完整有序 `tickers` 数组。
+- 前端通过“排序”按钮进入编辑态，拖拽只修改本地草稿顺序；点击“确认排序”后才提交完整顺序。
+- 保存期间禁用添加、删除、再次排序和拖拽，避免慢响应覆盖后续用户操作。
+- 排序成功后以服务端返回 `items` 覆盖本地状态；失败时回滚到确认前的 watchlist 顺序，并展示用户可理解的错误提示。
+
 ### 11.3 Ticker 选择
 
 - 选择行后立即更新当前 ticker。
@@ -423,6 +430,12 @@ flowchart LR
   - 复权口径：默认 `split_adjusted`；以 `adjusted/raw` 作为用户可理解的切换。
 - Fill 默认使用 `carry_forward`，不作为 terminal 的主控件暴露。
 - 对不支持的组合，先依赖后端 `422 MARKET_BARS_UNSUPPORTED_SESSION_RESOLUTION`；接口规则稳定后，前端可提前禁用已知无效组合。
+
+当前实现：
+
+- 前端将 bars 查询的 `count_back` 提升到 260，用于给 MA200 留出 warm-up 数据。
+- 技术指标由前端基于后端返回的 bars close 计算：BOLL 使用 20 周期均线与 2 倍标准差，MA 使用 30/60/200 周期简单移动平均。
+- 图表上方价格区覆盖价格线、BOLL、MA30、MA60、MA200；下方保留独立 volume 区域。
 
 ## 12. 错误处理
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 
 import { fetchMarketDataCapabilities, type MarketDataCapabilities } from '@/entities/market-capabilities'
@@ -6,6 +6,7 @@ import { fetchWatchlist, type WatchlistItem } from '@/entities/watchlist'
 import { useAuth } from '@/features/auth'
 import { addWatchlistItem } from '@/features/watchlist-add'
 import { removeWatchlistItem } from '@/features/watchlist-remove'
+import { reorderWatchlist } from '@/features/watchlist-reorder'
 import { firstTicker, nextTickerAfterRemoval } from '@/features/ticker-selection'
 import { useSnapshotPolling } from '@/features/snapshot-refresh'
 import { ApiError, isAuthError } from '@/shared/api'
@@ -24,8 +25,10 @@ export function TerminalShell() {
   const [capabilities, setCapabilities] = useState<MarketDataCapabilities | null>(null)
   const [isLoading, setLoading] = useState(true)
   const [isAdding, setAdding] = useState(false)
+  const [isReordering, setReordering] = useState(false)
   const [addError, setAddError] = useState<string | null>(null)
   const [terminalError, setTerminalError] = useState<string | null>(null)
+  const reorderInFlightRef = useRef(false)
 
   const handleAuthExpired = useCallback(() => {
     logout()
@@ -71,7 +74,7 @@ export function TerminalShell() {
   const snapshotPolling = useSnapshotPolling(token ?? '', tickers, handleAuthExpired)
 
   async function handleAddTicker(ticker: string) {
-    if (!token) {
+    if (!token || reorderInFlightRef.current) {
       return false
     }
     setAdding(true)
@@ -97,7 +100,7 @@ export function TerminalShell() {
   }
 
   async function handleRemoveTicker(ticker: string) {
-    if (!token) {
+    if (!token || reorderInFlightRef.current) {
       return
     }
     try {
@@ -113,6 +116,40 @@ export function TerminalShell() {
         return
       }
       setTerminalError(mapTerminalError(error, t))
+    }
+  }
+
+  async function handleReorderTickers(tickers: string[]) {
+    if (!token || reorderInFlightRef.current) {
+      return false
+    }
+
+    const previousItems = items
+    const nextItems = orderItemsByTickers(previousItems, tickers)
+    if (hasSameOrder(previousItems, nextItems)) {
+      return true
+    }
+
+    reorderInFlightRef.current = true
+    setReordering(true)
+    setItems(nextItems)
+    setTerminalError(null)
+    try {
+      const updatedItems = await reorderWatchlist(token, tickers)
+      setItems(updatedItems)
+      setSelectedTicker((current) => current ?? firstTicker(updatedItems))
+      return true
+    } catch (error) {
+      setItems(previousItems)
+      if (isAuthError(error)) {
+        handleAuthExpired()
+        return false
+      }
+      setTerminalError(mapTerminalError(error, t))
+      return false
+    } finally {
+      reorderInFlightRef.current = false
+      setReordering(false)
     }
   }
 
@@ -155,12 +192,14 @@ export function TerminalShell() {
         <WatchlistPanel
           addError={addError}
           isAdding={isAdding}
+          isReordering={isReordering}
           items={items}
           rows={snapshotPolling.rows}
           selectedTicker={selectedTicker}
           staleTickers={snapshotPolling.staleTickers}
           onAdd={handleAddTicker}
           onRemove={handleRemoveTicker}
+          onReorder={handleReorderTickers}
           onSelect={setSelectedTicker}
         />
         <ChartWorkspace
@@ -170,6 +209,23 @@ export function TerminalShell() {
         />
       </div>
     </main>
+  )
+}
+
+function orderItemsByTickers(items: WatchlistItem[], tickers: string[]) {
+  const itemByTicker = new Map(items.map((item) => [item.ticker, item]))
+  return tickers
+    .map((ticker, position) => {
+      const item = itemByTicker.get(ticker)
+      return item ? { ...item, position } : null
+    })
+    .filter((item): item is WatchlistItem => item !== null)
+}
+
+function hasSameOrder(currentItems: WatchlistItem[], nextItems: WatchlistItem[]) {
+  return (
+    currentItems.length === nextItems.length &&
+    currentItems.every((item, index) => item.ticker === nextItems[index]?.ticker)
   )
 }
 
@@ -202,6 +258,9 @@ function mapTerminalError(
     }
     if (error.code === 'MARKET_SNAPSHOT_UPSTREAM_UNAVAILABLE') {
       return t('terminal.snapshotsDegraded')
+    }
+    if (error.code === 'WATCHLIST_ORDER_INVALID') {
+      return t('terminal.reorderInvalid')
     }
   }
   return t('common.error')

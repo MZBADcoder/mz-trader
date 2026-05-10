@@ -1,2 +1,1 @@
-// Watchlist reorder feature public API.
-
+export { reorderWatchlist } from './model/reorder-watchlist'
