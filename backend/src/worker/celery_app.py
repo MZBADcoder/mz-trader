@@ -2,13 +2,38 @@
 
 from __future__ import annotations
 
+import sys
+from typing import Any
+
 from celery import Celery
 from celery.schedules import crontab
+from celery.signals import setup_logging
 
+from bootstrap.logging import configure_logging
 from settings import get_settings
 
 
 settings = get_settings()
+
+
+@setup_logging.connect
+def configure_celery_logging(loglevel: int | None = None, **_: Any) -> None:
+    """Route Celery process logs through the project JSON file logger."""
+    configure_logging(
+        settings,
+        log_file_name=_resolve_celery_log_file_name(),
+        log_level=loglevel,
+    )
+
+
+def _resolve_celery_log_file_name(argv: list[str] | None = None) -> str:
+    args = argv or sys.argv
+    if "beat" in args:
+        return settings.celery_beat_log_file_name
+    if "worker" in args:
+        return settings.celery_worker_log_file_name
+    return settings.celery_log_file_name
+
 
 celery_app = Celery(
     "trader-refactor-backend",

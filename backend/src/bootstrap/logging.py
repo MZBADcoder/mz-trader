@@ -83,9 +83,14 @@ def _close_handlers(handlers: list[logging.Handler]) -> None:
         handler.close()
 
 
-def configure_logging(settings: Settings) -> None:
+def configure_logging(
+    settings: Settings,
+    *,
+    log_file_name: str | None = None,
+    log_level: int | str | None = None,
+) -> None:
     """Configure root logging once per process configuration load."""
-    log_path = settings.app_log_path
+    log_path = settings.log_dir / (log_file_name or settings.log_file_name)
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
     root_logger = logging.getLogger()
@@ -93,7 +98,7 @@ def configure_logging(settings: Settings) -> None:
     root_logger.handlers.clear()
     _close_handlers(existing_handlers)
 
-    root_logger.setLevel(settings.log_level.upper())
+    root_logger.setLevel(log_level if log_level is not None else settings.log_level.upper())
     root_logger.addHandler(_build_file_handler(log_path, settings.log_backup_count))
 
     if settings.log_to_stdout:

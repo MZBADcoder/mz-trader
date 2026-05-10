@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_dir: Path = Field(default=Path("var/log"))
     log_file_name: str = "application.log"
+    celery_worker_log_file_name: str = "celery-worker.log"
+    celery_beat_log_file_name: str = "celery-beat.log"
+    celery_log_file_name: str = "celery.log"
     log_backup_count: int = 14
     log_to_stdout: bool = True
     request_id_header: str = "X-Request-ID"

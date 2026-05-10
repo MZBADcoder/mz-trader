@@ -60,3 +60,25 @@ def test_configure_logging_writes_json_lines_to_file(tmp_path) -> None:
     payload = json.loads(log_path.read_text(encoding="utf-8").strip())
     assert payload["message"] == "file logging works"
     assert payload["upstream_service"] == "massive"
+
+
+def test_configure_logging_can_write_to_explicit_file_name(tmp_path) -> None:
+    settings = Settings(
+        log_dir=tmp_path,
+        log_file_name="backend.log",
+        log_to_stdout=False,
+    )
+    configure_logging(settings, log_file_name="celery-worker.log")
+
+    logger = logging.getLogger("tests.logging.celery")
+    logger.info("celery file logging works")
+
+    for handler in logging.getLogger().handlers:
+        handler.flush()
+
+    assert not (tmp_path / "backend.log").exists()
+    log_path = tmp_path / "celery-worker.log"
+    assert log_path.exists()
+
+    payload = json.loads(log_path.read_text(encoding="utf-8").strip())
+    assert payload["message"] == "celery file logging works"
