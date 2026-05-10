@@ -115,11 +115,25 @@ def test_login_rejects_invalid_credentials(client) -> None:
 
 
 def test_watchlist_route_requires_authentication(client) -> None:
-    response = client.get("/api/v1/watchlist", headers={"X-Request-ID": "req-watchlist-auth"})
+    response = client.get(
+        "/api/v1/watchlist", headers={"X-Request-ID": "req-watchlist-auth"}
+    )
 
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "AUTH_REQUIRED"
     assert response.json()["error"]["request_id"] == "req-watchlist-auth"
+
+
+def test_watchlist_update_route_requires_authentication(client) -> None:
+    response = client.patch(
+        "/api/v1/watchlist",
+        json={"tickers": []},
+        headers={"X-Request-ID": "req-watchlist-update-auth"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "AUTH_REQUIRED"
+    assert response.json()["error"]["request_id"] == "req-watchlist-update-auth"
 
 
 def test_auth_me_rejects_invalid_token(client) -> None:
@@ -160,7 +174,9 @@ def test_auth_me_rejects_expired_token(client, integration_settings) -> None:
     assert response.json()["error"]["code"] == "AUTH_TOKEN_EXPIRED"
 
 
-def test_watchlist_route_reads_only_current_users_items_in_creation_order(client, session_factory) -> None:
+def test_watchlist_route_reads_only_current_users_items_in_persisted_order(
+    client, session_factory
+) -> None:
     first_response = _register_user(
         client,
         email="user@example.com",
@@ -189,6 +205,127 @@ def test_watchlist_route_reads_only_current_users_items_in_creation_order(client
 
     assert response.status_code == 200
     assert [item["ticker"] for item in response.json()["items"]] == ["AAPL", "MSFT"]
+    assert [item["position"] for item in response.json()["items"]] == [0, 1]
+
+
+def test_watchlist_update_reorders_existing_tickers_and_persists_order(
+    client, session_factory
+) -> None:
+    register_response = _register_user(
+        client,
+        email="watchlist-reorder@example.com",
+    )
+
+    assert register_response.status_code == 201
+    payload = register_response.json()
+
+    async def seed_watchlist() -> None:
+        async with session_factory() as session:
+            repository = WatchlistRepository(session)
+            await repository.add(user_id=payload["user"]["id"], ticker="AAPL")
+            await repository.add(user_id=payload["user"]["id"], ticker="NVDA")
+            await repository.add(user_id=payload["user"]["id"], ticker="MSFT")
+            await session.commit()
+
+    asyncio.run(seed_watchlist())
+
+    update_response = client.patch(
+        "/api/v1/watchlist",
+        json={"tickers": ["msft", "aapl", "nvda"]},
+        headers=_auth_headers(payload["access_token"]),
+    )
+    list_response = client.get(
+        "/api/v1/watchlist",
+        headers=_auth_headers(payload["access_token"]),
+    )
+
+    assert update_response.status_code == 200
+    assert [
+        (item["ticker"], item["position"]) for item in update_response.json()["items"]
+    ] == [
+        ("MSFT", 0),
+        ("AAPL", 1),
+        ("NVDA", 2),
+    ]
+    assert [
+        (item["ticker"], item["position"]) for item in list_response.json()["items"]
+    ] == [
+        ("MSFT", 0),
+        ("AAPL", 1),
+        ("NVDA", 2),
+    ]
+
+
+def test_watchlist_update_rejects_ticker_set_mismatch(client, session_factory) -> None:
+    register_response = _register_user(
+        client,
+        email="watchlist-reorder-invalid@example.com",
+    )
+
+    assert register_response.status_code == 201
+    payload = register_response.json()
+
+    async def seed_watchlist() -> None:
+        async with session_factory() as session:
+            repository = WatchlistRepository(session)
+            await repository.add(user_id=payload["user"]["id"], ticker="AAPL")
+            await repository.add(user_id=payload["user"]["id"], ticker="NVDA")
+            await session.commit()
+
+    asyncio.run(seed_watchlist())
+
+    response = client.patch(
+        "/api/v1/watchlist",
+        json={"tickers": ["AAPL", "MSFT"]},
+        headers=_auth_headers(payload["access_token"]),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "WATCHLIST_ORDER_INVALID"
+
+
+def test_watchlist_update_does_not_affect_other_users(client, session_factory) -> None:
+    first_response = _register_user(
+        client,
+        email="watchlist-reorder-a@example.com",
+    )
+    second_response = _register_user(
+        client,
+        email="watchlist-reorder-b@example.com",
+    )
+    first_payload = first_response.json()
+    second_payload = second_response.json()
+
+    async def seed_watchlists() -> None:
+        async with session_factory() as session:
+            repository = WatchlistRepository(session)
+            await repository.add(user_id=first_payload["user"]["id"], ticker="AAPL")
+            await repository.add(user_id=first_payload["user"]["id"], ticker="MSFT")
+            await repository.add(user_id=second_payload["user"]["id"], ticker="AAPL")
+            await repository.add(user_id=second_payload["user"]["id"], ticker="MSFT")
+            await session.commit()
+
+    asyncio.run(seed_watchlists())
+
+    update_response = client.patch(
+        "/api/v1/watchlist",
+        json={"tickers": ["MSFT", "AAPL"]},
+        headers=_auth_headers(first_payload["access_token"]),
+    )
+    second_list_response = client.get(
+        "/api/v1/watchlist",
+        headers=_auth_headers(second_payload["access_token"]),
+    )
+
+    assert update_response.status_code == 200
+    assert [item["ticker"] for item in update_response.json()["items"]] == [
+        "MSFT",
+        "AAPL",
+    ]
+    assert [item["ticker"] for item in second_list_response.json()["items"]] == [
+        "AAPL",
+        "MSFT",
+    ]
 
 
 def test_watchlist_add_item_returns_uppercase_and_persists_it(
@@ -218,6 +355,7 @@ def test_watchlist_add_item_returns_uppercase_and_persists_it(
 
     assert add_response.status_code == 201
     assert add_response.json()["item"]["ticker"] == "AAPL"
+    assert add_response.json()["item"]["position"] == 0
     assert [item["ticker"] for item in list_response.json()["items"]] == ["AAPL"]
 
 
@@ -303,6 +441,8 @@ def test_watchlist_delete_item_removes_ticker(client, session_factory) -> None:
         async with session_factory() as session:
             repository = WatchlistRepository(session)
             await repository.add(user_id=payload["user"]["id"], ticker="AAPL")
+            await repository.add(user_id=payload["user"]["id"], ticker="MSFT")
+            await repository.add(user_id=payload["user"]["id"], ticker="NVDA")
             await session.commit()
 
     asyncio.run(seed_watchlist())
@@ -318,7 +458,12 @@ def test_watchlist_delete_item_removes_ticker(client, session_factory) -> None:
 
     assert delete_response.status_code == 204
     assert list_response.status_code == 200
-    assert list_response.json()["items"] == []
+    assert [
+        (item["ticker"], item["position"]) for item in list_response.json()["items"]
+    ] == [
+        ("MSFT", 0),
+        ("NVDA", 1),
+    ]
 
 
 def test_watchlist_delete_rejects_missing_ticker(client) -> None:
@@ -339,9 +484,13 @@ def test_watchlist_delete_rejects_missing_ticker(client) -> None:
     assert response.json()["error"]["code"] == "WATCHLIST_TICKER_NOT_FOUND"
 
 
-def test_ticker_search_returns_candidates_for_company_query(client, integration_settings) -> None:
+def test_ticker_search_returns_candidates_for_company_query(
+    client, integration_settings
+) -> None:
     if not integration_settings.massive_api_key:
-        pytest.skip("Massive API key is required for live ticker search integration tests.")
+        pytest.skip(
+            "Massive API key is required for live ticker search integration tests."
+        )
 
     register_response = _register_user(
         client,

@@ -16,6 +16,7 @@ from application.services import (
     RegisterUserService,
     SearchTickersService,
     DeleteWatchlistItemService,
+    UpdateWatchlistService,
 )
 from bootstrap.request_context import bind_request_context
 from domain.entities import User
@@ -51,6 +52,10 @@ def get_delete_watchlist_item_service(
     container: Container = Depends(get_container),
 ) -> DeleteWatchlistItemService:
     return container.get_delete_watchlist_item_service()
+
+
+def get_update_watchlist_service(container: Container = Depends(get_container)) -> UpdateWatchlistService:
+    return container.get_update_watchlist_service()
 
 
 def get_search_tickers_service(container: Container = Depends(get_container)) -> SearchTickersService:

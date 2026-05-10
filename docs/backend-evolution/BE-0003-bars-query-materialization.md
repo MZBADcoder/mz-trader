@@ -1,6 +1,6 @@
 # BE-0003 — Bars Query + Canonical Storage + Aggregation
 
-> 状态：Draft
+> 状态：Completed
 > 
 > 关联 PRD：`docs/prd/PRD-0001-market-watch.md`
 > 

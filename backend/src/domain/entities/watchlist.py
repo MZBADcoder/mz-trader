@@ -13,4 +13,5 @@ class WatchlistItem:
     id: str
     user_id: str
     ticker: str
+    position: int
     created_at: datetime

@@ -38,6 +38,7 @@ def to_watchlist_item_entity(model: WatchlistItemModel) -> WatchlistItem:
         id=str(model.id),
         user_id=str(model.user_id),
         ticker=model.ticker,
+        position=model.sort_order,
         created_at=_ensure_utc(model.created_at),
     )
 

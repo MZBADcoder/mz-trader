@@ -15,7 +15,7 @@ from application.services.market_data import (
     RunTickerBarsBootstrapService,
 )
 from application.services.ticker_search import SearchTickersService
-from application.services.watchlist import AddWatchlistItemService, DeleteWatchlistItemService, GetWatchlistService
+from application.services.watchlist import AddWatchlistItemService, DeleteWatchlistItemService, GetWatchlistService, UpdateWatchlistService
 
 
 __all__ = [
@@ -38,4 +38,5 @@ __all__ = [
     "RunTerminalSnapshotFinalizerService",
     "RunTickerBarsBootstrapService",
     "SearchTickersService",
+    "UpdateWatchlistService",
 ]

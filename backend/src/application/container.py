@@ -24,6 +24,7 @@ from application.services import (
     RunTickerBarsBootstrapService,
     SearchTickersService,
     DeleteWatchlistItemService,
+    UpdateWatchlistService,
 )
 from domain.rules import build_market_data_mode
 from infrastructure.cache import RedisSnapshotStore, create_redis_client
@@ -107,6 +108,7 @@ class Container:
             reference_client=self._reference_client,
         )
         self._delete_watchlist_item_service = DeleteWatchlistItemService(uow_factory=self._uow_factory)
+        self._update_watchlist_service = UpdateWatchlistService(uow_factory=self._uow_factory)
         self._search_tickers_service = SearchTickersService(
             ticker_search_client=self._reference_client
         )
@@ -202,6 +204,9 @@ class Container:
 
     def get_delete_watchlist_item_service(self) -> DeleteWatchlistItemService:
         return self._delete_watchlist_item_service
+
+    def get_update_watchlist_service(self) -> UpdateWatchlistService:
+        return self._update_watchlist_service
 
     def get_search_tickers_service(self) -> SearchTickersService:
         return self._search_tickers_service

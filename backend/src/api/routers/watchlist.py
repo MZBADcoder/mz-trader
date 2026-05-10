@@ -8,15 +8,22 @@ from api.deps import (
     get_add_watchlist_item_service,
     get_current_user,
     get_delete_watchlist_item_service,
+    get_update_watchlist_service,
     get_watchlist_service,
 )
 from api.schemas.watchlist import (
     CreateWatchlistItemRequest,
     CreateWatchlistItemResponse,
+    UpdateWatchlistRequest,
     WatchlistItemResponse,
     WatchlistResponse,
 )
-from application.services import AddWatchlistItemService, DeleteWatchlistItemService, GetWatchlistService
+from application.services import (
+    AddWatchlistItemService,
+    DeleteWatchlistItemService,
+    GetWatchlistService,
+    UpdateWatchlistService,
+)
 from domain.entities import User
 
 
@@ -29,10 +36,16 @@ async def list_watchlist(
     service: GetWatchlistService = Depends(get_watchlist_service),
 ) -> WatchlistResponse:
     items = await service.execute(user_id=current_user.id)
-    return WatchlistResponse(items=[WatchlistItemResponse.model_validate(item) for item in items])
+    return WatchlistResponse(
+        items=[WatchlistItemResponse.model_validate(item) for item in items]
+    )
 
 
-@router.post("/items", response_model=CreateWatchlistItemResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/items",
+    response_model=CreateWatchlistItemResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 async def add_watchlist_item(
     payload: CreateWatchlistItemRequest,
     current_user: User = Depends(get_current_user),
@@ -40,6 +53,18 @@ async def add_watchlist_item(
 ) -> CreateWatchlistItemResponse:
     item = await service.execute(user_id=current_user.id, ticker=payload.ticker)
     return CreateWatchlistItemResponse(item=WatchlistItemResponse.model_validate(item))
+
+
+@router.patch("", response_model=WatchlistResponse)
+async def update_watchlist(
+    payload: UpdateWatchlistRequest,
+    current_user: User = Depends(get_current_user),
+    service: UpdateWatchlistService = Depends(get_update_watchlist_service),
+) -> WatchlistResponse:
+    items = await service.execute(user_id=current_user.id, tickers=payload.tickers)
+    return WatchlistResponse(
+        items=[WatchlistItemResponse.model_validate(item) for item in items]
+    )
 
 
 @router.delete("/items/{ticker}", status_code=status.HTTP_204_NO_CONTENT)

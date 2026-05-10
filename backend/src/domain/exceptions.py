@@ -104,6 +104,14 @@ class WatchlistLimitExceededError(AppError):
     status_code = 409
 
 
+class WatchlistOrderInvalidError(AppError):
+    """Watchlist reorder payload is not a valid permutation."""
+
+    code = "WATCHLIST_ORDER_INVALID"
+    message = "Watchlist order is invalid."
+    status_code = 422
+
+
 class MarketDataTickerInvalidError(AppError):
     """Market data ticker format is invalid."""
 

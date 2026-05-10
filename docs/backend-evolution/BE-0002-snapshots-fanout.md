@@ -1,6 +1,6 @@
 # BE-0002 — Watchlist Snapshots + Redis Snapshot Cache
 
-> 状态：Reviewed
+> 状态：Completed
 > 关联 PRD：`docs/prd/PRD-0001-market-watch.md`
 > 范围：覆盖 G2 的批量 snapshot 行情能力，重点解决 backend 统一批量拉取、Redis 快照缓存、请求级 fallback；不包含增量推送通道、bars 持久化
 

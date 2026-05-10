@@ -17,7 +17,10 @@ class DeleteWatchlistItemService:
         normalized_ticker = validate_ticker(ticker)
 
         async with self._uow_factory.build() as uow:
-            deleted = await uow.watchlist.delete(user_id=user_id, ticker=normalized_ticker)
+            await uow.watchlist.lock_owner(user_id)
+            deleted = await uow.watchlist.delete(
+                user_id=user_id, ticker=normalized_ticker
+            )
             if not deleted:
                 raise WatchlistTickerNotFoundError()
             await uow.commit()

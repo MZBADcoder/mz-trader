@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, String, UniqueConstraint, func
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -38,6 +38,7 @@ class WatchlistItemModel(Base):
     __table_args__ = (
         UniqueConstraint("user_id", "ticker", name="uq_watchlist_items_user_ticker"),
         Index("ix_watchlist_items_user_id", "user_id"),
+        Index("ix_watchlist_items_user_sort_order", "user_id", "sort_order"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -47,6 +48,7 @@ class WatchlistItemModel(Base):
         nullable=False,
     )
     ticker: Mapped[str] = mapped_column(String(15), nullable=False)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 

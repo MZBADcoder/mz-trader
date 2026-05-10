@@ -18,6 +18,7 @@ from domain.exceptions import (
     MarketDataTickerInvalidError,
     MarketDataTickerLimitExceededError,
     ValidationError,
+    WatchlistOrderInvalidError,
     WatchlistTickerInvalidError,
 )
 
@@ -56,6 +57,23 @@ def validate_ticker(ticker: str) -> str:
     normalized = normalize_ticker(ticker)
     if not TICKER_PATTERN.fullmatch(normalized):
         raise WatchlistTickerInvalidError()
+    return normalized
+
+
+def validate_watchlist_order_tickers(tickers: list[str]) -> list[str]:
+    """Validate and normalize a complete watchlist order payload."""
+    normalized: list[str] = []
+    seen: set[str] = set()
+
+    for ticker in tickers:
+        candidate = normalize_ticker(ticker)
+        if not TICKER_PATTERN.fullmatch(candidate):
+            raise WatchlistOrderInvalidError()
+        if candidate in seen:
+            raise WatchlistOrderInvalidError()
+        normalized.append(candidate)
+        seen.add(candidate)
+
     return normalized
 
 

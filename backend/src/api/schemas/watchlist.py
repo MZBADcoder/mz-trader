@@ -17,6 +17,7 @@ class WatchlistItemResponse(BaseModel):
     """Watchlist item returned to the client."""
 
     ticker: str
+    position: int
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -36,3 +37,9 @@ class CreateWatchlistItemResponse(BaseModel):
     item: WatchlistItemResponse
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class UpdateWatchlistRequest(BaseModel):
+    """Payload for updating a watchlist order."""
+
+    tickers: list[str]

@@ -37,13 +37,17 @@ class FakeRegisterService:
     async def execute(self, *, email: str, password: str) -> AuthSession:
         if self.should_fail:
             raise AuthEmailAlreadyExistsError()
-        return AuthSession(user=_user(), access_token="token-123", token_type="bearer", expires_in=3600)
+        return AuthSession(
+            user=_user(), access_token="token-123", token_type="bearer", expires_in=3600
+        )
 
 
 @dataclass(slots=True)
 class FakeLoginService:
     async def execute(self, *, email: str, password: str) -> AuthSession:
-        return AuthSession(user=_user(), access_token="token-123", token_type="bearer", expires_in=3600)
+        return AuthSession(
+            user=_user(), access_token="token-123", token_type="bearer", expires_in=3600
+        )
 
 
 @dataclass(slots=True)
@@ -64,6 +68,7 @@ class FakeWatchlistService:
                 id="item-1",
                 user_id=user_id,
                 ticker="AAPL",
+                position=0,
                 created_at=datetime(2026, 3, 13, 10, 0, tzinfo=UTC),
             )
         ]
@@ -76,8 +81,24 @@ class FakeAddWatchlistItemService:
             id="item-1",
             user_id=user_id,
             ticker=ticker.strip().upper(),
+            position=0,
             created_at=datetime(2026, 3, 13, 10, 0, tzinfo=UTC),
         )
+
+
+@dataclass(slots=True)
+class FakeUpdateWatchlistService:
+    async def execute(self, *, user_id: str, tickers: list[str]) -> list[WatchlistItem]:
+        return [
+            WatchlistItem(
+                id=f"item-{ticker}",
+                user_id=user_id,
+                ticker=ticker.strip().upper(),
+                position=position,
+                created_at=datetime(2026, 3, 13, 10, position, tzinfo=UTC),
+            )
+            for position, ticker in enumerate(tickers)
+        ]
 
 
 @dataclass(slots=True)
@@ -101,7 +122,9 @@ class FakeSearchReferenceService:
 
 
 class FakeContainer:
-    def __init__(self, *, duplicate_register: bool = False, expired_token: bool = False) -> None:
+    def __init__(
+        self, *, duplicate_register: bool = False, expired_token: bool = False
+    ) -> None:
         self._duplicate_register = duplicate_register
         self._expired_token = expired_token
 
@@ -123,6 +146,9 @@ class FakeContainer:
     def get_delete_watchlist_item_service(self) -> FakeDeleteWatchlistItemService:
         return FakeDeleteWatchlistItemService()
 
+    def get_update_watchlist_service(self) -> FakeUpdateWatchlistService:
+        return FakeUpdateWatchlistService()
+
     def get_search_tickers_service(self) -> FakeSearchReferenceService:
         return FakeSearchReferenceService()
 
@@ -139,7 +165,10 @@ def _build_app(container: FakeContainer) -> FastAPI:
 def test_register_route_returns_auth_session() -> None:
     client = TestClient(_build_app(FakeContainer()))
 
-    response = client.post("/api/v1/auth/register", json={"email": "user@example.com", "password": "secret123"})
+    response = client.post(
+        "/api/v1/auth/register",
+        json={"email": "user@example.com", "password": "secret123"},
+    )
 
     assert response.status_code == 201
     assert response.json()["user"]["id"] == "6f9ee6e5-fcd8-4567-a356-b3d8801cb6ef"
@@ -173,7 +202,9 @@ def test_watchlist_route_requires_authentication() -> None:
 def test_register_route_rejects_short_password() -> None:
     client = TestClient(_build_app(FakeContainer()))
 
-    response = client.post("/api/v1/auth/register", json={"email": "user@example.com", "password": "short"})
+    response = client.post(
+        "/api/v1/auth/register", json={"email": "user@example.com", "password": "short"}
+    )
 
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "VALIDATION_ERROR"
@@ -182,7 +213,9 @@ def test_register_route_rejects_short_password() -> None:
 def test_auth_me_route_returns_token_expired() -> None:
     client = TestClient(_build_app(FakeContainer(expired_token=True)))
 
-    response = client.get("/api/v1/auth/me", headers={"Authorization": "Bearer expired-token"})
+    response = client.get(
+        "/api/v1/auth/me", headers={"Authorization": "Bearer expired-token"}
+    )
 
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "AUTH_TOKEN_EXPIRED"
@@ -199,3 +232,21 @@ def test_ticker_search_route_returns_items() -> None:
 
     assert response.status_code == 200
     assert response.json()["items"][0]["ticker"] == "AAPL"
+
+
+def test_watchlist_update_route_returns_ordered_items() -> None:
+    client = TestClient(_build_app(FakeContainer()))
+
+    response = client.patch(
+        "/api/v1/watchlist",
+        json={"tickers": ["nvda", "aapl"]},
+        headers={"Authorization": "Bearer valid-token"},
+    )
+
+    assert response.status_code == 200
+    assert [
+        (item["ticker"], item["position"]) for item in response.json()["items"]
+    ] == [
+        ("NVDA", 0),
+        ("AAPL", 1),
+    ]
