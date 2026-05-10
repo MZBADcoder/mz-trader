@@ -37,11 +37,10 @@ Terminal 是 PRD001 第一阶段的核心使用界面，面向真实终端用户
 | P0 | 营销首页 | 表达 Trade Helper 定位，引导注册/登录/进入终端 |
 | P0 | Watchlist 基础管理 | 查询、新增、删除 ticker；默认按后端返回顺序展示；最多 50 个 |
 | P0 | 行情快照 | 批量展示 watchlist snapshot；轮询刷新；展示延迟/实时模式和最近更新时间 |
-| P0 | 图表基础 | 选中 ticker 后展示 bars；支持分时图、常用 resolution、session 切换 |
+| P0 | 图表基础 | 选中 ticker 后通过 REST polling 展示 bars；支持分时图、常用 resolution、session 切换 |
 | P0 | 终端用户状态提示 | 对数据准备中、部分可用、降级、失败等状态做用户可理解的提示 |
 | P1 | 单 watchlist 拖拽排序 | 支持用户在当前 watchlist 内拖拽调整顺序；若后端暂未提供排序持久化接口，需要先补齐接口再进入实现 |
 | P1 | 技术指标显示 | 图表支持 BOLL、MA30、MA60、MA200，并区分价格/K 线区域与 volume 区域 |
-| P2 | Stream 扩展预留 | 后续若后端支持 stream，UI 可从 polling 扩展到 stream/fallback 模式 |
 
 ### 非目标
 
@@ -49,6 +48,7 @@ Terminal 是 PRD001 第一阶段的核心使用界面，面向真实终端用户
 - 多 watchlist、分组、共享 watchlist 暂时不做。
 - 前端不直连 Massive。
 - 前端不复刻后端的交易日历、数据延迟、权限或行情可用性规则。
+- 本期不做 Socket、WebSocket 或 SSE；所有行情更新都通过受保护 REST API polling 获取。
 
 ## 3. 信息架构
 
@@ -69,8 +69,10 @@ flowchart TD
   Watchlist --> Snapshots["GET /api/v1/market-data/snapshots?tickers=..."]
   Watchlist --> SelectTicker["默认选中第一支 ticker"]
   SelectTicker --> Bars["GET /api/v1/market-data/bars"]
-  Snapshots --> Poll["轮询刷新"]
-  Poll --> Snapshots
+  Snapshots --> SnapshotPoll["snapshots 轮询刷新"]
+  SnapshotPoll --> Snapshots
+  Bars --> BarsPoll["当前 ticker bars 轮询刷新"]
+  BarsPoll --> Bars
 ```
 
 ### 路由规划
@@ -142,7 +144,7 @@ MVP 使用两栏工作台布局：
 - Watchlist 行内信息需要稳定对齐：ticker、价格、涨跌幅、公司名和删除按钮不能重影；公司名左对齐，长文本省略。
 - Center workspace 承载选中 ticker 的概览、粒度/session/复权口径控制，以及 BOLL、MA30、MA60、MA200 等技术指标。
 - 图表应接近 TradingView 的阅读习惯：上方为价格/K 线区域，下方为独立 volume 区域，技术指标覆盖在价格区。
-- 延迟模式只在顶部状态条表达，不在主界面重复展示 realtime、stream、polling 等实现细节。
+- 延迟/实时模式只在顶部状态条表达，不在主界面重复展示 REST polling 等传输实现细节。
 - Terminal 面向终端用户呈现市场观察、图表分析和策略研究所需的信息。
 - 小屏幕下改为纵向流：watchlist 在上，图表和指标控制在下。
 
@@ -240,7 +242,41 @@ sequenceDiagram
   UI->>MD: GET /api/v1/market-data/bars?ticker=AAPL&resolution=5m&session=regular&count_back=120
 ```
 
-### 8.2 客户端状态归属
+### 8.2 本期数据获取方式
+
+本期前端完全依赖 backend REST API 获取行情数据，不建立 Socket、WebSocket 或 SSE 连接，也不为实时推送预留 UI 模式。用户看到的是“最近更新时间、延迟/实时模式、降级状态”等业务语义，而不是底层传输方式。
+
+```mermaid
+flowchart LR
+  Timer["前端定时器"]
+  UIAction["用户选择 ticker / 调整 controls"]
+  FE["Terminal 前端状态"]
+  API["Backend REST API"]
+
+  Timer --> SnapshotPoll["轮询 snapshots"]
+  Timer --> BarsPoll["轮询当前 ticker bars"]
+  UIAction --> BarsFetch["重新请求 bars"]
+  SnapshotPoll --> API
+  BarsPoll --> API
+  BarsFetch --> API
+  API --> FE
+```
+
+| 数据 | 触发方式 | 接口 | UI 处理 |
+| --- | --- | --- | --- |
+| Watchlist | 启动、增删、排序后刷新 | `GET /api/v1/watchlist` | 以后端返回为准 |
+| Snapshots | 固定间隔 REST polling | `GET /api/v1/market-data/snapshots?tickers=...` | 更新列表；失败时保留 last-known-good |
+| Bars | 当前 ticker 固定间隔 polling；ticker/controls 变化时立即请求 | `GET /api/v1/market-data/bars` | 根据 `readiness` 展示 loading、ready、degraded 或 failed |
+| Capabilities | Terminal 启动时请求；必要时手动刷新 | `GET /api/v1/market-data/capabilities` | 展示数据模式与可用能力 |
+
+实现约束：
+
+- Snapshot polling 以当前 watchlist 全量 ticker 为输入，最多 50 个。
+- Bars polling 只针对当前选中 ticker 和当前 controls，避免为未选中 ticker 批量拉取 bars。
+- 轮询失败时先进入 degraded/last-known-good 表达，不清空已可读的行情区域。
+- 如未来重新评估 Socket/SSE，需要新增独立 PRD 或 evolution 文档，不作为 FE-0001 的隐含扩展点。
+
+### 8.3 客户端状态归属
 
 | 状态 | 归属 | 说明 |
 | --- | --- | --- |
@@ -434,6 +470,6 @@ Terminal 原型位于 `docs/frontend-evolution/prototypes/prd001-terminal-protot
 4. P0：实现路由、auth session 恢复、API client 和后端错误码归一化。
 5. P0：实现 `/auth` 和 `/terminal` shell，以当前原型作为视觉基准。
 6. P0：接入 watchlist 增删查和 snapshots polling，并实现 last-known-good 行为。
-7. P0：接入 bars 查询控件和图表渲染，图表分为价格/K 线区域与 volume 区域。
+7. P0：接入 bars 查询控件、当前 ticker bars polling 和图表渲染，图表分为价格/K 线区域与 volume 区域。
 8. P1：在后端排序持久化接口明确后，实现单 watchlist 拖拽排序。
 9. P1：补充首页 CTA、语言切换、auth redirect、empty watchlist、add/delete ticker、degraded snapshot refresh、bars readiness 等 UI 测试。

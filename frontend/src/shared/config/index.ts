@@ -4,7 +4,9 @@ export const apiBaseUrl = (
 
 export const appConfig = {
   apiBaseUrl,
-  snapshotPollMs: 15_000,
-  snapshotRetryMs: 30_000,
+  barsPollMs: 10_000,
+  barsRetryMs: 5_000,
+  snapshotPollMs: 10_000,
+  snapshotRetryMs: 5_000,
   maxWatchlistItems: 50,
 } as const

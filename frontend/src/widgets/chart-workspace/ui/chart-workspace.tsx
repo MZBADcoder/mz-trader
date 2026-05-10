@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 
-import { fetchBars, type BarItem, type BarsMeta } from '@/entities/market-bars'
+import { type BarItem, type BarsMeta } from '@/entities/market-bars'
+import { useBarsPolling, type BarsRefreshState } from '@/features/bars-refresh'
 import { BarsQueryControls, type BarsControlsValue } from '@/features/bars-query-controls'
-import { ApiError, isAuthError } from '@/shared/api'
+import { ApiError } from '@/shared/api'
 import { useI18n } from '@/shared/i18n'
 import { classNames, formatCompactNumber, formatCurrency, formatDateTime } from '@/shared/lib'
 
@@ -21,65 +22,28 @@ const defaultControls: BarsControlsValue = {
 export function ChartWorkspace({ onAuthExpired, selectedTicker, token }: Props) {
   const { locale, t } = useI18n()
   const [controls, setControls] = useState<BarsControlsValue>(defaultControls)
-  const [bars, setBars] = useState<BarItem[]>([])
-  const [meta, setMeta] = useState<BarsMeta | null>(null)
-  const [isLoading, setLoading] = useState(false)
-  const [error, setError] = useState<ApiError | null>(null)
+  const barsQuery = useMemo(
+    () =>
+      selectedTicker
+        ? {
+            ticker: selectedTicker,
+            resolution: controls.resolution,
+            session: controls.session,
+            adjustment: controls.adjustment,
+            count_back: 180,
+          }
+        : null,
+    [controls.adjustment, controls.resolution, controls.session, selectedTicker],
+  )
+  const barsPolling = useBarsPolling(token, barsQuery, onAuthExpired)
+  const { bars, error, isLoading, meta, state } = barsPolling
 
-  useEffect(() => {
-    if (!selectedTicker) {
-      return
-    }
-
-    const controller = new AbortController()
-    const loadingTimer = window.setTimeout(() => {
-      setLoading(true)
-      setError(null)
-      setBars([])
-      setMeta(null)
-    }, 0)
-    fetchBars(
-      token,
-      {
-        ticker: selectedTicker,
-        resolution: controls.resolution,
-        session: controls.session,
-        adjustment: controls.adjustment,
-        count_back: 180,
-      },
-      controller.signal,
-    )
-      .then((response) => {
-        setBars(response.bars)
-        setMeta(response.meta)
-      })
-      .catch((unknownError) => {
-        if (controller.signal.aborted) {
-          return
-        }
-        if (isAuthError(unknownError)) {
-          onAuthExpired()
-          return
-        }
-        setError(unknownError instanceof ApiError ? unknownError : null)
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) {
-          setLoading(false)
-        }
-      })
-
-    return () => {
-      controller.abort()
-      window.clearTimeout(loadingTimer)
-    }
-  }, [controls, onAuthExpired, selectedTicker, token])
-
-  const chartState = useMemo(() => getChartState(meta, isLoading, error, bars.length, t), [
+  const chartState = useMemo(() => getChartState(meta, state, isLoading, error, bars.length, t), [
     bars.length,
     error,
     isLoading,
     meta,
+    state,
     t,
   ])
 
@@ -111,7 +75,7 @@ export function ChartWorkspace({ onAuthExpired, selectedTicker, token }: Props) 
       </header>
 
       <BarsQueryControls
-        error={error ? mapBarsError(error, t) : null}
+        error={error ? mapBarsQueryValidationError(error, t) : null}
         value={controls}
         onChange={setControls}
       />
@@ -193,6 +157,7 @@ function BarsSvg({ bars, locale }: { bars: BarItem[]; locale: string }) {
 
 function getChartState(
   meta: BarsMeta | null,
+  state: BarsRefreshState,
   isLoading: boolean,
   error: ApiError | null,
   count: number,
@@ -200,6 +165,11 @@ function getChartState(
 ) {
   if (isLoading) {
     return { kind: 'loading', label: t('common.loading') }
+  }
+  if (state === 'degraded') {
+    return count
+      ? { kind: 'degraded', label: t('terminal.readinessDegraded') }
+      : { kind: 'failed', label: t('terminal.barsError') }
   }
   if (error) {
     return { kind: 'failed', label: t('terminal.barsError') }
@@ -225,7 +195,7 @@ function getChartState(
   return { kind: 'ready', label: t('terminal.readinessReady') }
 }
 
-function mapBarsError(error: ApiError, t: (key: `terminal.${string}`) => string) {
+function mapBarsQueryValidationError(error: ApiError, t: (key: `terminal.${string}`) => string) {
   if (error.code === 'MARKET_BARS_UNSUPPORTED_SESSION_RESOLUTION') {
     return t('terminal.unsupportedCombination')
   }
@@ -249,5 +219,5 @@ function mapBarsError(error: ApiError, t: (key: `terminal.${string}`) => string)
   ) {
     return t('terminal.barsCountInvalid')
   }
-  return t('terminal.barsError')
+  return null
 }
