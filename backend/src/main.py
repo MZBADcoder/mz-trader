@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from api.errors import register_exception_handlers
 from api.middleware.request_context import RequestContextMiddleware
@@ -55,6 +56,7 @@ def create_app(
         snapshot_client=snapshot_client,
         now_provider=now_provider,
     )
+    _add_cors_middleware(app, app_settings)
     app.add_middleware(
         RequestContextMiddleware,
         request_id_header=app_settings.request_id_header,
@@ -62,6 +64,22 @@ def create_app(
     register_exception_handlers(app)
     app.include_router(api_router)
     return app
+
+
+def _add_cors_middleware(app: FastAPI, settings: Settings) -> None:
+    allowed_origins = settings.resolved_cors_allowed_origins
+    if not allowed_origins:
+        return
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allowed_origins,
+        allow_credentials=settings.cors_allow_credentials,
+        allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", settings.request_id_header],
+        expose_headers=[settings.request_id_header],
+    )
+
 
 async def _run_startup_reconciliation(container: Container) -> None:
     try:

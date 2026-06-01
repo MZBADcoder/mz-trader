@@ -56,6 +56,12 @@ RUN_GAP_RECONCILIATION_ON_START=0 ./scripts/start_dev_stack.sh
 CELERY_WORKER_CONCURRENCY=1 ./scripts/start_dev_stack.sh
 ```
 
+Frontend CORS:
+
+```bash
+CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+```
+
 Notes:
 
 - `src/` is intentionally flat

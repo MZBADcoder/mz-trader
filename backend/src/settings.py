@@ -60,6 +60,8 @@ class Settings(BaseSettings):
     log_backup_count: int = 14
     log_to_stdout: bool = True
     request_id_header: str = "X-Request-ID"
+    cors_allowed_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+    cors_allow_credentials: bool = True
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -71,6 +73,15 @@ class Settings(BaseSettings):
     def app_log_path(self) -> Path:
         """Resolve the configured application log file path."""
         return self.log_dir / self.log_file_name
+
+    @property
+    def resolved_cors_allowed_origins(self) -> list[str]:
+        """Return configured CORS origins as browser Origin header values."""
+        return [
+            origin.strip().rstrip("/")
+            for origin in self.cors_allowed_origins.split(",")
+            if origin.strip()
+        ]
 
     @property
     def resolved_market_data_snapshot_refresh_interval_seconds(self) -> int:
