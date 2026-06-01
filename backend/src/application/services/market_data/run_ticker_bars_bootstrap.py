@@ -77,7 +77,7 @@ class RunTickerBarsBootstrapService:
                     await uow.ticker_bars_state.mark_failed(
                         ticker=ticker,
                         failed_at=self._now_provider().astimezone(UTC),
-                        error_message=str(exc) or "ticker bars bootstrap failed",
+                        error_message=_bootstrap_failure_message(exc),
                     )
                     await uow.commit()
                 failed_tickers.append(ticker)
@@ -222,3 +222,13 @@ class RunTickerBarsBootstrapService:
         if not self._calendar.is_trading_day(market_day):
             return None
         return market_day
+
+
+def _bootstrap_failure_message(exc: Exception) -> str:
+    detail_source: object | None = getattr(exc, "orig", None)
+    if detail_source is None:
+        detail_source = exc.__cause__
+    detail = str(detail_source or exc).strip()
+    if not detail:
+        return "ticker bars bootstrap failed"
+    return f"{type(exc).__name__}: {detail}"

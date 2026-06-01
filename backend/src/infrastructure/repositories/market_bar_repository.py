@@ -16,10 +16,20 @@ from infrastructure.db.mappers import to_market_bar_1d_entity, to_market_bar_1m_
 from infrastructure.db.models import MarketBar1dModel, MarketBar1mModel
 
 
+MARKET_BAR_UPSERT_BATCH_SIZE = 1_000
+
+
 def _ensure_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC)
     return value.astimezone(UTC)
+
+
+def _chunk_bars(bars: list[CanonicalBar]) -> list[list[CanonicalBar]]:
+    return [
+        bars[start : start + MARKET_BAR_UPSERT_BATCH_SIZE]
+        for start in range(0, len(bars), MARKET_BAR_UPSERT_BATCH_SIZE)
+    ]
 
 
 class MarketBarRepository:
@@ -97,9 +107,10 @@ class MarketBarRepository:
         return to_market_bar_1m_entity(model) if model is not None else None
 
     async def upsert_1m(self, bars: list[CanonicalBar]) -> None:
-        if not bars:
-            return
+        for batch in _chunk_bars(bars):
+            await self._upsert_1m_batch(batch)
 
+    async def _upsert_1m_batch(self, bars: list[CanonicalBar]) -> None:
         values = [
             {
                 "id": uuid.uuid4(),
@@ -143,9 +154,10 @@ class MarketBarRepository:
         await self._session.execute(stmt)
 
     async def upsert_1d(self, bars: list[CanonicalBar]) -> None:
-        if not bars:
-            return
+        for batch in _chunk_bars(bars):
+            await self._upsert_1d_batch(batch)
 
+    async def _upsert_1d_batch(self, bars: list[CanonicalBar]) -> None:
         values = [
             {
                 "id": uuid.uuid4(),

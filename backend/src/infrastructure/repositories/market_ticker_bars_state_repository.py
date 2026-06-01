@@ -13,10 +13,22 @@ from infrastructure.db.mappers import to_market_ticker_bars_state_entity
 from infrastructure.db.models import MarketTickerBarsStateModel
 
 
+LAST_ERROR_MESSAGE_MAX_LENGTH = 1024
+_TRUNCATED_ERROR_SUFFIX = " ... [truncated]"
+
+
 def _ensure_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC)
     return value.astimezone(UTC)
+
+
+def _truncate_error_message(message: str | None) -> str | None:
+    if message is None:
+        return None
+    if len(message) <= LAST_ERROR_MESSAGE_MAX_LENGTH:
+        return message
+    return f"{message[: LAST_ERROR_MESSAGE_MAX_LENGTH - len(_TRUNCATED_ERROR_SUFFIX)]}{_TRUNCATED_ERROR_SUFFIX}"
 
 
 class MarketTickerBarsStateRepository:
@@ -76,7 +88,7 @@ class MarketTickerBarsStateRepository:
                 "earliest_1d_trading_day": state.earliest_1d_trading_day,
                 "latest_1d_trading_day": state.latest_1d_trading_day,
                 "last_error_code": state.last_error_code,
-                "last_error_message": state.last_error_message,
+                "last_error_message": _truncate_error_message(state.last_error_message),
                 "created_at": _ensure_utc(state.created_at),
                 "updated_at": _ensure_utc(state.updated_at),
             }
