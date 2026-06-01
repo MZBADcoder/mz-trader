@@ -236,7 +236,9 @@ export function WatchlistPanel({
               >
                 <span className="ticker-cell">
                   <strong>{item.ticker}</strong>
-                  <small>{snapshot?.market_status ?? t('terminal.marketStatus')}</small>
+                  <small>
+                    {snapshot?.session ? snapshotSessionLabel(snapshot.session, t) : t('terminal.marketStatus')}
+                  </small>
                 </span>
                 <span className="price-cell">
                   <strong>{formatCurrency(snapshot?.last, locale)}</strong>
@@ -282,6 +284,22 @@ function orderItemsByTickers(items: WatchlistItem[], tickers: string[]) {
   return tickers
     .map((ticker) => itemByTicker.get(ticker))
     .filter((item): item is WatchlistItem => item !== undefined)
+}
+
+function snapshotSessionLabel(session: string, t: (key: `terminal.${string}`) => string) {
+  if (session === 'pre_market') {
+    return t('terminal.marketPreMarket')
+  }
+  if (session === 'regular') {
+    return t('terminal.marketOpen')
+  }
+  if (session === 'after_hours') {
+    return t('terminal.marketAfterHours')
+  }
+  if (session === 'closed') {
+    return t('terminal.marketClosed')
+  }
+  return t('terminal.marketStatus')
 }
 
 function hasSameTickerOrder(items: WatchlistItem[], tickers: string[]) {

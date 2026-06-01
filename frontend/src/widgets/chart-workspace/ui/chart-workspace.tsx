@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { type PointerEvent, useMemo, useRef, useState } from 'react'
 
 import { type BarItem, type BarsMeta } from '@/entities/market-bars'
 import { useBarsPolling, type BarsRefreshState } from '@/features/bars-refresh'
@@ -134,10 +134,29 @@ function BarsSvg({ bars, locale }: { bars: BarItem[]; locale: string }) {
   const priceHeight = 360
   const volumeHeight = 100
   const padding = 28
+  const visibleLimit = 92
   const indicators = calculateIndicators(bars)
-  const closes = bars.map((bar) => bar.close)
-  const volumes = bars.map((bar) => bar.volume)
-  const indicatorValues = indicators.flatMap((indicator) => [
+  const visibleCount = Math.min(bars.length, visibleLimit)
+  const maxWindowStart = Math.max(0, bars.length - visibleCount)
+  const barsKey = `${bars[0]?.time ?? ''}:${bars.at(-1)?.time ?? ''}:${bars.length}`
+  const [windowState, setWindowState] = useState(() => ({
+    barsKey,
+    windowStart: maxWindowStart,
+  }))
+  const [isDragging, setIsDragging] = useState(false)
+  const dragRef = useRef<{
+    pointerId: number
+    startWindow: number
+    startX: number
+    step: number
+  } | null>(null)
+  const windowStart =
+    windowState.barsKey === barsKey ? clamp(windowState.windowStart, 0, maxWindowStart) : maxWindowStart
+
+  const visibleBars = bars.slice(windowStart, windowStart + visibleCount)
+  const visibleIndicators = indicators.slice(windowStart, windowStart + visibleCount)
+  const volumes = visibleBars.map((bar) => bar.volume)
+  const indicatorValues = visibleIndicators.flatMap((indicator) => [
     indicator.ma30,
     indicator.ma60,
     indicator.ma200,
@@ -146,61 +165,115 @@ function BarsSvg({ bars, locale }: { bars: BarItem[]; locale: string }) {
     indicator.bollLower,
   ])
   const priceValues = [
-    ...bars.flatMap((bar) => [bar.high, bar.low, bar.close]),
+    ...visibleBars.flatMap((bar) => [bar.open, bar.high, bar.low, bar.close]),
     ...indicatorValues.filter((value): value is number => value !== null),
   ]
   const minPrice = Math.min(...priceValues)
   const maxPrice = Math.max(...priceValues)
   const maxVolume = Math.max(...volumes, 1)
   const priceSpan = Math.max(maxPrice - minPrice, 0.01)
-  const step = bars.length > 1 ? (width - padding * 2) / (bars.length - 1) : 0
+  const step = visibleBars.length ? (width - padding * 2) / visibleBars.length : 0
+  const candleWidth = Math.max(4, Math.min(12, step * 0.58))
+  const volumeWidth = Math.max(2, Math.min(candleWidth, step * 0.7))
 
-  const xForIndex = (index: number) => padding + index * step
+  const xForIndex = (index: number) => padding + step / 2 + index * step
   const yForPrice = (price: number) =>
     padding + ((maxPrice - price) / priceSpan) * (priceHeight - padding * 2)
-  const closePath = buildLinePath(closes, xForIndex, yForPrice)
   const ma30Path = buildLinePath(
-    indicators.map((indicator) => indicator.ma30),
+    visibleIndicators.map((indicator) => indicator.ma30),
     xForIndex,
     yForPrice,
   )
   const ma60Path = buildLinePath(
-    indicators.map((indicator) => indicator.ma60),
+    visibleIndicators.map((indicator) => indicator.ma60),
     xForIndex,
     yForPrice,
   )
   const ma200Path = buildLinePath(
-    indicators.map((indicator) => indicator.ma200),
+    visibleIndicators.map((indicator) => indicator.ma200),
     xForIndex,
     yForPrice,
   )
   const bollUpperPath = buildLinePath(
-    indicators.map((indicator) => indicator.bollUpper),
+    visibleIndicators.map((indicator) => indicator.bollUpper),
     xForIndex,
     yForPrice,
   )
   const bollMiddlePath = buildLinePath(
-    indicators.map((indicator) => indicator.bollMiddle),
+    visibleIndicators.map((indicator) => indicator.bollMiddle),
     xForIndex,
     yForPrice,
   )
   const bollLowerPath = buildLinePath(
-    indicators.map((indicator) => indicator.bollLower),
+    visibleIndicators.map((indicator) => indicator.bollLower),
     xForIndex,
     yForPrice,
   )
   const bollBandPath = buildBandPath(
-    indicators.map((indicator) => indicator.bollUpper),
-    indicators.map((indicator) => indicator.bollLower),
+    visibleIndicators.map((indicator) => indicator.bollUpper),
+    visibleIndicators.map((indicator) => indicator.bollLower),
     xForIndex,
     yForPrice,
   )
 
-  const latest = bars.at(-1)
+  const latest = visibleBars.at(-1)
+  const earliest = visibleBars[0]
+  const canPan = maxWindowStart > 0
+
+  const handlePointerDown = (event: PointerEvent<SVGSVGElement>) => {
+    if (!canPan || !step) {
+      return
+    }
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startWindow: windowStart,
+      startX: event.clientX,
+      step,
+    }
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    setIsDragging(true)
+  }
+
+  const handlePointerMove = (event: PointerEvent<SVGSVGElement>) => {
+    const drag = dragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) {
+      return
+    }
+    event.preventDefault()
+    const deltaBars = Math.round((drag.startX - event.clientX) / drag.step)
+    setWindowState({
+      barsKey,
+      windowStart: clamp(drag.startWindow + deltaBars, 0, maxWindowStart),
+    })
+  }
+
+  const handlePointerEnd = (event: PointerEvent<SVGSVGElement>) => {
+    if (dragRef.current?.pointerId === event.pointerId) {
+      dragRef.current = null
+      setIsDragging(false)
+    }
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+  }
 
   return (
-    <svg className="bars-svg" role="img" viewBox={`0 0 ${width} ${priceHeight + volumeHeight}`}>
-      <title>{latest ? `${latest.time} ${latest.close}` : 'Bars chart'}</title>
+    <svg
+      aria-label="Candlestick chart"
+      className={classNames('bars-svg', canPan && 'pannable', isDragging && 'dragging')}
+      onPointerCancel={handlePointerEnd}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerEnd}
+      role="img"
+      viewBox={`0 0 ${width} ${priceHeight + volumeHeight}`}
+    >
+      <title>
+        {latest
+          ? `${earliest?.time ?? ''} - ${latest.time} open ${latest.open} high ${latest.high} low ${latest.low} close ${latest.close} volume ${latest.volume}`
+          : 'Candlestick chart'}
+      </title>
       <g className="grid-lines">
         {[0, 1, 2, 3].map((line) => {
           const y = padding + line * ((priceHeight - padding * 2) / 3)
@@ -208,24 +281,56 @@ function BarsSvg({ bars, locale }: { bars: BarItem[]; locale: string }) {
         })}
       </g>
       {bollBandPath ? <path className="boll-band" d={bollBandPath} /> : null}
+      <g className="candles">
+        {visibleBars.map((bar, index) => {
+          const x = xForIndex(index)
+          const openY = yForPrice(bar.open)
+          const closeY = yForPrice(bar.close)
+          const bodyY = Math.min(openY, closeY)
+          const bodyHeight = Math.max(1, Math.abs(closeY - openY))
+          const direction = bar.close > bar.open ? 'up' : bar.close < bar.open ? 'down' : 'flat'
+          return (
+            <g
+              className={classNames(
+                'candle',
+                direction,
+                !bar.is_final && 'partial',
+                bar.is_synthetic && 'synthetic',
+              )}
+              key={`${bar.time}-${index}`}
+            >
+              <line className="wick" x1={x} x2={x} y1={yForPrice(bar.high)} y2={yForPrice(bar.low)} />
+              <rect
+                className="body"
+                height={bodyHeight}
+                rx={1}
+                width={candleWidth}
+                x={x - candleWidth / 2}
+                y={bodyY}
+              />
+            </g>
+          )
+        })}
+      </g>
       <path className="indicator-line boll" d={bollUpperPath} />
       <path className="indicator-line boll middle" d={bollMiddlePath} />
       <path className="indicator-line boll" d={bollLowerPath} />
       <path className="indicator-line ma200" d={ma200Path} />
       <path className="indicator-line ma60" d={ma60Path} />
       <path className="indicator-line ma30" d={ma30Path} />
-      <path className="price-line" d={closePath} fill="none" />
       <line className="volume-separator" x1={padding} x2={width - padding} y1={priceHeight} y2={priceHeight} />
       <g className="volume-bars">
-        {bars.map((bar, index) => {
-          const x = padding + index * step
+        {visibleBars.map((bar, index) => {
+          const x = xForIndex(index)
           const height = (bar.volume / maxVolume) * (volumeHeight - 18)
+          const direction = bar.close > bar.open ? 'up' : bar.close < bar.open ? 'down' : 'flat'
           return (
             <rect
+              className={direction}
               height={height}
               key={`${bar.time}-${index}`}
-              width={Math.max(2, step * 0.6)}
-              x={x}
+              width={volumeWidth}
+              x={x - volumeWidth / 2}
               y={priceHeight + volumeHeight - height - 8}
             />
           )
@@ -239,6 +344,10 @@ function BarsSvg({ bars, locale }: { bars: BarItem[]; locale: string }) {
       </text>
     </svg>
   )
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max)
 }
 
 type IndicatorPoint = {
