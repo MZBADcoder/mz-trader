@@ -10,7 +10,7 @@ from typing import Callable
 from bootstrap.request_context import bind_request_context
 from domain.entities import Bar, BarsMeta, BarsQuery, BarsResult, CanonicalBar, TickerBarsState
 from domain.exceptions import MarketBarsRangeTooLargeError
-from domain.rules import MARKET_BARS_MAX_ESTIMATED_OUTPUT_ROWS
+from domain.rules import MARKET_BARS_1D_RETENTION_YEARS, MARKET_BARS_MAX_ESTIMATED_OUTPUT_ROWS
 from infrastructure.calendar import SessionWindow, UsStockCalendar
 from infrastructure.db.uow import SqlAlchemyUnitOfWorkFactory
 
@@ -658,11 +658,23 @@ class GetBarsService:
         if resolution == "1D":
             return self._calendar.previous_trading_days(anchor_day, max(count_back, 1))[0], anchor_day
 
+        earliest_bucket_start_day = self._higher_bucket_start_day(
+            resolution=resolution,
+            trading_day=self._daily_source_floor_day(anchor_day=anchor_day),
+        )
         bucket_day = anchor_day
         for _ in range(max(count_back, 1)):
             bucket_start_day = self._higher_bucket_start_day(resolution=resolution, trading_day=bucket_day)
+            if bucket_start_day <= earliest_bucket_start_day:
+                return earliest_bucket_start_day, anchor_day
             bucket_day = self._calendar.previous_trading_day(bucket_start_day)
-        return self._higher_bucket_start_day(resolution=resolution, trading_day=bucket_day), anchor_day
+        resolved_start_day = self._higher_bucket_start_day(resolution=resolution, trading_day=bucket_day)
+        return max(resolved_start_day, earliest_bucket_start_day), anchor_day
+
+    def _daily_source_floor_day(self, *, anchor_day: date) -> date:
+        return self._calendar.previous_or_same_trading_day(
+            self._subtract_years(anchor_day, MARKET_BARS_1D_RETENTION_YEARS)
+        )
 
     def _higher_bucket_key(self, *, resolution: str, trading_day: date) -> HigherBucketKey:
         if resolution == "1W":
@@ -703,3 +715,9 @@ class GetBarsService:
         if not self._calendar.is_trading_day(market_day):
             return None
         return market_day
+
+    def _subtract_years(self, value: date, years: int) -> date:
+        try:
+            return value.replace(year=value.year - years)
+        except ValueError:
+            return value.replace(month=2, day=28, year=value.year - years)

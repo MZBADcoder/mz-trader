@@ -19,6 +19,7 @@ class FakeBarsRepository:
     def __init__(self) -> None:
         self.rows_1m: list[CanonicalBar] = []
         self.rows_1d: list[CanonicalBar] = []
+        self.list_1d_calls: list[dict] = []
 
     async def list_1m(self, *, ticker, adjustment, start_at, end_at, session_kind=None):
         rows = [
@@ -33,6 +34,14 @@ class FakeBarsRepository:
         return sorted(rows, key=lambda item: item.bucket_start_at)
 
     async def list_1d(self, *, ticker, adjustment, start_day, end_day):
+        self.list_1d_calls.append(
+            {
+                "ticker": ticker,
+                "adjustment": adjustment,
+                "start_day": start_day,
+                "end_day": end_day,
+            }
+        )
         rows = [
             row
             for row in self.rows_1d
@@ -255,3 +264,30 @@ def test_get_bars_service_builds_daily_series_from_1d_history_and_current_day_1m
     assert result.bars[1].is_final is False
     assert result.meta.data_source == "db"
     assert result.meta.readiness == "ready"
+
+
+def test_get_bars_service_clamps_large_monthly_count_back_to_retention_window() -> None:
+    repository = FakeBarsRepository()
+    state_repository = FakeTickerBarsStateRepository()
+    service = GetBarsService(
+        uow_factory=FakeUowFactory(repository, state_repository),
+        calendar=UsStockCalendar(),
+        mode=MarketDataMode(delay_minutes=0),
+        now_provider=lambda: _dt(2026, 6, 1, 16, 0),
+    )
+    query = validate_bars_query(
+        ticker="NVDA",
+        resolution="1M",
+        session="regular",
+        adjustment="split_adjusted",
+        fill="carry_forward",
+        include_partial=True,
+        from_time=None,
+        to_time=None,
+        count_back=260,
+    )
+
+    result = asyncio.run(service.execute(user_id="user-1", query=query))
+
+    assert result.bars == []
+    assert repository.list_1d_calls[0]["start_day"] == date(2016, 6, 1)
