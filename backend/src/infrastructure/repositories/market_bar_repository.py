@@ -6,7 +6,7 @@ import uuid
 from datetime import UTC, date, datetime
 from typing import cast
 
-from sqlalchemy import Select, delete, select
+from sqlalchemy import Select, delete, func, select
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -106,6 +106,20 @@ class MarketBarRepository:
         model = await self._session.scalar(stmt)
         return to_market_bar_1m_entity(model) if model is not None else None
 
+    async def get_regular_1m_bounds(self, *, ticker: str) -> tuple[date, date, datetime] | None:
+        stmt = select(
+            func.min(MarketBar1mModel.trading_day),
+            func.max(MarketBar1mModel.trading_day),
+            func.max(MarketBar1mModel.bucket_start_at_utc),
+        ).where(
+            MarketBar1mModel.ticker == ticker,
+            MarketBar1mModel.session_kind == "regular",
+        )
+        earliest_day, latest_day, latest_bucket = (await self._session.execute(stmt)).one()
+        if earliest_day is None or latest_day is None or latest_bucket is None:
+            return None
+        return earliest_day, latest_day, _ensure_utc(latest_bucket)
+
     async def upsert_1m(self, bars: list[CanonicalBar]) -> None:
         for batch in _chunk_bars(bars):
             await self._upsert_1m_batch(batch)
@@ -200,11 +214,13 @@ class MarketBarRepository:
         self,
         *,
         threshold_day: date,
-        session_kinds: list[str] | None = None,
     ) -> int:
         stmt = delete(MarketBar1mModel).where(MarketBar1mModel.trading_day < threshold_day)
-        if session_kinds is not None:
-            stmt = stmt.where(MarketBar1mModel.session_kind.in_(session_kinds))
+        result = cast(CursorResult[object], await self._session.execute(stmt))
+        return int(result.rowcount if result.rowcount is not None else 0)
+
+    async def delete_1m_by_session_kinds(self, *, session_kinds: list[str]) -> int:
+        stmt = delete(MarketBar1mModel).where(MarketBar1mModel.session_kind.in_(session_kinds))
         result = cast(CursorResult[object], await self._session.execute(stmt))
         return int(result.rowcount if result.rowcount is not None else 0)
 

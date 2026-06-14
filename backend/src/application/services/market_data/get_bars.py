@@ -44,7 +44,7 @@ class GetBarsService:
         bind_request_context(user_id=user_id, ticker=query.ticker)
         effective_now = self._now_provider().astimezone(UTC) - timedelta(minutes=self._mode.delay_minutes)
 
-        if query.resolution in INTRADAY_RESOLUTION_MINUTES or query.session != "regular":
+        if query.resolution in INTRADAY_RESOLUTION_MINUTES:
             return await self._execute_intraday_source(query=query, effective_now=effective_now)
         return await self._execute_daily_source(query=query, effective_now=effective_now)
 
@@ -436,26 +436,8 @@ class GetBarsService:
         return min(bucket_start + timedelta(minutes=INTRADAY_RESOLUTION_MINUTES[resolution]), window.end_at)
 
     async def _resolve_fill_seed(self, *, uow, ticker: str, adjustment: str, session: str, trading_day: date) -> float | None:
-        if session in {"pre_market", "regular"}:
-            previous_day = self._calendar.previous_trading_day(trading_day)
-            previous_rows = await uow.bars.list_1d(
-                ticker=ticker,
-                adjustment=adjustment,
-                start_day=previous_day,
-                end_day=previous_day,
-            )
-            return previous_rows[-1].close if previous_rows else None
-
-        regular_window = self._calendar.regular_session_window(trading_day)
-        regular_rows = await uow.bars.list_1m(
-            ticker=ticker,
-            adjustment=adjustment,
-            start_at=regular_window.start_at,
-            end_at=regular_window.end_at,
-            session_kind="regular",
-        )
-        if regular_rows:
-            return regular_rows[-1].close
+        if session != "regular":
+            raise ValueError(f"Unsupported bars session: {session}")
         previous_day = self._calendar.previous_trading_day(trading_day)
         previous_rows = await uow.bars.list_1d(
             ticker=ticker,

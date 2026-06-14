@@ -7,6 +7,8 @@
 > 关联参考：`docs/external-api-reference/massive-stocks-api-reference.md`
 > 
 > 范围：覆盖美股股票 bars 的统一读取接口、交易日与 session 规则、`1m/1d` canonical storage、其它 resolution 聚合、后台刷新/初始化/清理策略、fill 语义、以及与图表技术指标相关的 backend 边界；不包含 SSE/WebSocket 推送实现
+>
+> 2026-06-14 scope update：当前产品分析只需要 regular session。bars 链路仅支持、拉取、持久化、查询 `regular` 数据；本文中早期关于 `pre_market` / `after_hours` bars 的设计讨论均视为 legacy 背景，不再指导当前实现。Snapshot 仍可用日历标记当前市场状态。
 
 ## 1. 概览
 
@@ -53,11 +55,11 @@ Frontend
   -> GET /api/v1/market-data/bars
   -> normalize query
   -> resolve mode
-       latest session slice | explicit range
-  -> resolve calendar + session window
+     latest regular slice | explicit range
+  -> resolve calendar + regular session window
   -> choose canonical source
-       intraday / non-regular day -> 1m
-       regular 1D/1W/1M/1Q       -> 1d (+ optional 1m stitch)
+       intraday             -> 1m
+       1D/1W/1M/1Q          -> 1d (+ optional 1m stitch)
   -> read DB
   -> aggregate
   -> apply fill
@@ -78,7 +80,7 @@ Background jobs
 
 - 提供一个统一的 `GET /api/v1/market-data/bars`
 - 支持 `1m / 5m / 15m / 30m / 60m / 1D / 1W / 1M / 1Q`
-- 支持 `pre_market / regular / after_hours`
+- 仅支持 `regular` bars session
 - 对非交易日、节假日、half-day、DST 使用统一交易日历规则
 - bars 查询严格只读数据库，不在请求路径中依赖 Massive
 - 在 1 分钟级 polling 下，最新未完成 bucket 能稳定返回且明确标记 `is_final=false`
@@ -100,7 +102,7 @@ Background jobs
 ### 4.1 一句话结论
 
 - **存储层只保存 provider truth**
-- **展示层才做 session filtering、resolution aggregation、carry-forward fill、partial stitching**
+- **展示层才做 regular session filtering、resolution aggregation、carry-forward fill、partial stitching**
 - **这套设计优先服务 MVP，不预设为最终 product-level 架构**
 
 ### 4.2 为什么只存 `1m + 1d`
@@ -114,7 +116,7 @@ Background jobs
 
 - `1d` 是高阶 regular K 的历史事实层，天然更适合保存完成态
 - 当前 trading day 的 daily / weekly / monthly / quarterly partial bar，统一由 `1m` stitch，避免 current day 的 `1d` 行频繁被改写
-- `pre_market` 与 `after_hours` 的 day-level 聚合直接由 `1m` 生成，不单独存 daily canonical
+- 当前阶段不生成 `pre_market` / `after_hours` day-level bars
 
 ### 4.4 为什么 MVP 先不做预聚合视图
 
@@ -148,10 +150,8 @@ product-level 阶段若观测到热点，再考虑：
 - `trading day`
   - 以 `America/New_York` 为基准的市场交易日，而不是 UTC 日期
 - `session`
-  - 本期只支持：
-    - `pre_market`
+  - 本期 bars 只支持：
     - `regular`
-    - `after_hours`
 - `partial bar`
   - 当前 bucket 尚未结束、后续仍可能变化的 bar
 - `final bar`
@@ -175,27 +175,26 @@ product-level 阶段若观测到热点，再考虑：
 
 | Resolution | Source | Session 支持 | 说明 |
 | --- | --- | --- | --- |
-| `1m` | `1m` | 全部 3 个 | 分时基础粒度 |
-| `5m` | `1m` | 全部 3 个 | session 内聚合 |
-| `15m` | `1m` | 全部 3 个 | session 内聚合 |
-| `30m` | `1m` | 全部 3 个 | session 内聚合 |
-| `60m` | `1m` | 全部 3 个 | session 内聚合 |
-| `1D` | `1d` 或 `1m` | 全部 3 个 | `regular` 优先用 `1d`，非 regular 用 `1m` |
+| `1m` | `1m` | `regular` only | 分时基础粒度 |
+| `5m` | `1m` | `regular` only | regular session 内聚合 |
+| `15m` | `1m` | `regular` only | regular session 内聚合 |
+| `30m` | `1m` | `regular` only | regular session 内聚合 |
+| `60m` | `1m` | `regular` only | regular session 内聚合 |
+| `1D` | `1d` 或 `1m` | `regular` only | completed day 优先用 `1d`，current day 用 `1m` stitch |
 | `1W` | `1d` + `1m stitch` | `regular` only | 当前 bucket 可 stitch |
 | `1M` | `1d` + `1m stitch` | `regular` only | 当前 bucket 可 stitch |
 | `1Q` | `1d` + `1m stitch` | `regular` only | 当前 bucket 可 stitch |
 
 ### 6.2 Session 支持边界
 
-- 本期不支持 `overnight`
-- `1W / 1M / 1Q` 只支持 `regular`
-- 对 `1W / 1M / 1Q` 请求 `pre_market` 或 `after_hours` 时，返回明确业务错误：
-  - `422 MARKET_BARS_UNSUPPORTED_SESSION_RESOLUTION`
+- 本期 bars 不支持 `pre_market`、`after_hours`、`overnight`
+- 对任何 resolution 请求非 `regular` session 时，返回明确业务错误：
+  - `422 MARKET_BARS_SESSION_UNSUPPORTED`
 
 这样做的原因：
 
-- `1W / 1M / 1Q` 若支持 non-regular，需要长期依赖 `1m` 聚合，历史成本高
-- `1d` canonical 只保存 completed regular bars，先把 regular K 链路做稳定
+- 非 regular bars 会扩大 ingestion、retention、fill、gap reconciliation、前端交互与测试矩阵
+- `1d` canonical 只保存 completed regular bars，当前先把 regular K 链路做稳定
 
 ## 7. API 设计
 
@@ -222,7 +221,7 @@ frontend-facing 参数模型在本阶段做一次收敛：
 - `resolution`
   - 枚举：`1m|5m|15m|30m|60m|1D|1W|1M|1Q`
 - `session`
-  - 枚举：`pre_market|regular|after_hours`
+  - 枚举：`regular`
 
 #### 可选参数
 
@@ -429,14 +428,12 @@ anchor_time = min(request.to or effective_now, effective_now)
 
 ### 8.2 Session 定义
 
-本期股票 session 统一定义为：
+本期 bars 只支持 `regular`：
 
-- `pre_market`
-  - `04:00:00 ET <= t < regular_open`
 - `regular`
   - `regular_open <= t < regular_close`
-- `after_hours`
-  - `regular_close <= t < 20:00:00 ET`
+
+Snapshot 仍可用日历标记 `pre_market | regular | after_hours | closed` 当前市场状态，但该状态不表示 bars 查询、持久化或分析支持盘前/盘后数据。
 
 其中：
 
@@ -454,12 +451,12 @@ UTC timestamp
   -> find trading_day
   -> load regular_open / regular_close for that trading_day
   -> classify into
-       pre_market | regular | after_hours | unsupported
+       regular | unsupported
 ```
 
 `unsupported` 说明：
 
-- 落在 `20:00 ET` 之后、`04:00 ET` 之前的数据，本期视为 unsupported
+- 落在 regular session 之外的数据，本期 bars 视为 unsupported
 - 若 provider 返回该类分钟 bars，backend 不落库，不对 frontend 暴露
 
 ### 8.4 Latest Mode 交易日 fallback
@@ -519,15 +516,15 @@ explicit range mode 不做自动交易日 fallback：
 - synthetic fill bars 只在 read path 中临时生成
 - canonical rows 使用 upsert，按自然键覆盖
 - `regular` `1m` canonical 保留最近 `10` 个 trading days
-- `pre_market` / `after_hours` `1m` canonical 只保留最新 `1` 个 trading day
+- legacy `pre_market` / `after_hours` `1m` rows 由 cleanup 删除，不再新增
 - `1d` canonical 只保留最近 `10` years
 
 ### 9.2 `market_bars_1m`
 
 用途：
 
-- 承接 provider 的 minute bars，并按 session-aware retention 写入
-- 覆盖 `pre_market / regular / after_hours`
+- 承接 provider 的 regular-session minute bars
+- 仅覆盖 `regular`
 - 作为所有 intraday resolution 的事实层
 - 作为 current day / current bucket stitch 的事实层
 
@@ -539,7 +536,7 @@ explicit range mode 不做自动交易日 fallback：
 - `trading_day`
   - `America/New_York` 视角的交易日
 - `session_kind`
-  - `pre_market|regular|after_hours`
+  - 当前只写入 `regular`
   - 写入时派生
 - `open`
 - `high`
@@ -563,7 +560,7 @@ explicit range mode 不做自动交易日 fallback：
 - 不保存 `5m/15m/30m/60m`
 - 不保存 synthetic fill bars
 - `regular` 只保留最近 `10` 个 trading days
-- `pre_market` / `after_hours` 只保留最新 `1` 个 trading day
+- legacy `pre_market` / `after_hours` rows 不再保留
 
 ### 9.3 `market_bars_1d`
 
@@ -656,8 +653,6 @@ effective_now = now_utc - delay_minutes
 - `1D + regular`
   - completed days 优先从 `1d`
   - current day partial 由 `1m` stitch
-- `1D + pre_market/after_hours`
-  - 从 `1m` 读取并按 trading day 聚合
 - `1W / 1M / 1Q + regular`
   - completed days 从 `1d`
   - current open bucket 由 `1m` stitch current day
@@ -758,11 +753,6 @@ regular 60m
   09:30-10:29
   10:30-11:29
   ...
-
-pre_market 60m
-  04:00-04:59
-  05:00-05:59
-  ...
 ```
 
 这样可以避免：
@@ -777,14 +767,6 @@ pre_market 60m
   - 使用 `market_bars_1d`
 - current trading day partial：
   - 从 `market_bars_1m` 中筛出 current day `regular` rows 聚合
-
-#### `1D + pre_market`
-
-- 每个 trading day 聚合该日 `04:00 ET` 到 `regular_open` 的 `1m`
-
-#### `1D + after_hours`
-
-- 每个 trading day 聚合该日 `regular_close` 到 `20:00 ET` 的 `1m`
 
 ### 12.4 `1W / 1M / 1Q` 聚合
 
@@ -848,13 +830,8 @@ pre_market 60m
 
 ### 14.3 `1D`
 
-- `regular`
-  - current trading day 的 daily bar 在 regular session 结束前始终 `is_final=false`
-- `pre_market`
-  - current trading day 在 regular open 前，若已有 bars，`is_final=false`
-  - regular open 到达后，该 trading day 的 pre_market `is_final=true`
-- `after_hours`
-  - current trading day 在 `20:00 ET` 前始终可能变化，`is_final=false`
+- current trading day 的 daily bar 在 regular session 结束前始终 `is_final=false`
+- post-close finalizer 写入 completed regular day 后，该日 `1D` 才视为 final
 
 ### 14.4 `1W / 1M / 1Q`
 
@@ -870,6 +847,7 @@ MVP 后台写路径里，把 mutable tail 收敛为：
 也就是：
 
 - 后台 refresh 任务只主动覆盖当前 trading day 的 `1m`
+- regular close 后保留一个短 grace refresh 窗口，用后台回源把最后的 regular `1m` tail 固化为 final
 - 已完成的过去 trading day，默认视为 immutable
 - 对过去 trading day 的修复只由 bootstrap / reconciler / finalizer 触发
 
@@ -952,12 +930,8 @@ offline repair path
 
 `seed_close` 取值统一如下：
 
-- `pre_market`
-  - 上一个 trading day 的 regular close
 - `regular`
   - 上一个 trading day 的 regular close
-- `after_hours`
-  - 当前 trading day 的 regular close
 
 session 开始后：
 
@@ -1047,16 +1021,12 @@ Application Service
 
 ### 17.2 Session 建模原则
 
-即使引入交易日历库，本期也不直接依赖第三方去定义 `pre_market / after_hours`：
-
-- `pre_market` 固定从 `04:00 ET` 开始
-- `after_hours` 固定到 `20:00 ET` 结束
-- `regular_open / regular_close` 由交易日历库提供
+本期 bars 只依赖交易日历库提供的 `regular_open / regular_close`。盘前/盘后只作为 snapshot 当前市场状态展示语义，不进入 bars 查询、落库、聚合或指标计算链路。
 
 原因：
 
-- 本期只做美股股票，不做更复杂的 venue-specific phase
-- 这样更贴近当前产品需求，也更容易测试
+- 当前产品分析只需要 regular session
+- 避免让 bars API、retention、gap reconciliation 和 frontend 图表承担无产品收益的扩展时段复杂度
 
 ### 17.3 可选增强
 
@@ -1340,13 +1310,13 @@ ready
 
 用途：
 
-- 在交易时段内持续刷新当前 trading day 的 `1m` canonical
+- 在 regular 交易时段内持续刷新当前 trading day 的 `1m` canonical
+- regular close 后短暂继续刷新 regular tail，确保最后一个 minute bucket 通过写路径固化为 final
 
 运行时段：
 
-- `pre_market`
 - `regular`
-- `after_hours`
+- `regular close` 后短 grace window；provider 查询上限仍封顶在 `regular close`，不拉取 after-hours bars
 
 建议频率：
 
@@ -1371,6 +1341,7 @@ select tracked tickers
 
 - 不必每轮重拉整天
 - 优先拉最近小窗口并允许覆盖 mutable tail
+- 读路径不自行改写 provider row 的 `is_final` 语义；finality 由后台写入任务更新并持久化
 
 #### C. Post-Close Finalizer
 
@@ -1434,8 +1405,8 @@ for each ready tracked ticker
 
 说明：
 
-- historical reconciler 不处理 `pre_market` / `after_hours`
-- extended-hours current tail 由 current-day refresher 维护，并由 session-aware retention 控制保留范围
+- historical reconciler 只处理 `regular`
+- current-day refresher 也只维护 regular-session mutable tail
 - 可通过 Celery 手动触发：
   - `PYTHONPATH=src poetry run celery -A worker.celery_app call worker.tasks.bar_refresh.run_historical_bars_gap_reconciliation`
 - `historical gap reconciler` 与 `startup reconciliation` 在概念上分属两个场景：
@@ -1462,7 +1433,7 @@ for each ready tracked ticker
 MVP 保留策略：
 
 - `regular` session 保留最近 `10` 个 trading days 的 `1m`
-- `pre_market` / `after_hours` 只保留最新 `1` 个 trading day 的 `1m`
+- legacy `pre_market` / `after_hours` `1m` rows 全量清理
 - 只保留最近 `10` years 的 `1d`
 
 执行规则：
@@ -1471,8 +1442,7 @@ MVP 保留策略：
 daily cleanup at 03:00 ET
   -> compute oldest retained trading day for regular 1m
   -> delete all 1m rows older than regular threshold
-  -> compute latest retained trading day for extended-session 1m
-  -> delete pre_market / after_hours rows older than extended threshold
+  -> delete legacy pre_market / after_hours rows
   -> compute oldest retained day for 1d
   -> delete 1d rows older than threshold
 ```
@@ -1483,15 +1453,15 @@ daily cleanup at 03:00 ET
 bootstrap / historical reconcile
   -> fetch retained 1m range from Massive
   -> keep historical regular rows
-  -> keep extended-session rows only for latest retained trading day
+  -> discard provider rows outside regular session
   -> upsert 1m canonical
 ```
 
 说明：
 
 - MVP 中历史图表的主要 source of truth 是 `regular` session
-- `pre_market` / `after_hours` 主要服务当天盘前异动、盘后反应、当前价格上下文
-- 若未来产品需要历史 extended-hours overlay，应作为显式升级重新调整 retention 与查询语义
+- legacy `pre_market` / `after_hours` rows 由 cleanup 删除，不再新增
+- 若未来产品需要 extended-hours overlay，应作为显式升级重新调整 retention、查询语义、测试矩阵和 frontend 控件
 
 ### 18.8.4 初始化策略
 
@@ -1683,10 +1653,10 @@ initializing timeout
   - `10 minutes`
 - regular `1m` retention：
   - 最近 `10` 个 trading days
-- pre/after `1m` retention：
-  - 最新 `1` 个 trading day
 - retention cleanup：
   - 每天 `03:00 ET` 运行一次
+  - 删除超过 regular retention 的 `1m` rows
+  - 删除 legacy `pre_market` / `after_hours` rows，并用剩余 regular rows 修正 ticker state 1m 边界
 - `1d` retention：
   - 最近 `10` years
 
@@ -1704,9 +1674,7 @@ initializing timeout
 
 - 周末 latest intraday fallback 到最近交易日
 - 交易日 pre-open 时 regular intraday 为空
-- 交易日 pre-open 时 pre_market intraday 可读
 - half-day regular close 正确提前
-- after_hours 从 half-day close 开始计算
 - `1m -> 5m/15m/30m/60m` bucket anchor 正确
 - `1d + current day stitch` 正确
 - `1W/1M/1Q` 当前 bucket partial 正确
@@ -1724,7 +1692,7 @@ initializing timeout
 
 - 周 K / 月 K / 季度 K 的 bucket 边界
 - current day 未开始、进行中、结束后的 `is_final` 切换
-- regular 与 pre/after 不混 session
+- provider 返回 pre/after rows 时，bars 不落库、不查询、不混入 regular
 - `partial_range` 与 `calendar_shifted` 语义稳定
 - `1d canonical` 只在 completed regular-day 后写入
 - 当前 trading day `1m` mutable tail upsert 语义稳定
@@ -1764,5 +1732,5 @@ initializing timeout
 按本文件继续推进时，建议顺序如下：
 
 1. 先落 API schema 和统一术语，再建表。
-2. 先实现 `regular` intraday + `regular` day/week/month/quarter，再补 `pre_market` / `after_hours`。
+2. 先保持 `regular` intraday + `regular` day/week/month/quarter 的端到端稳定；`pre_market` / `after_hours` bars 仅作为未来明确需求重新设计。
 3. 先用 automated tests 锁住 holiday / half-day / pre-open empty regular chart 这几个最容易漂的点。

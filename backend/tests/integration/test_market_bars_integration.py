@@ -660,6 +660,8 @@ def test_bootstrap_writes_minute_and_completed_daily_canonical_storage(session_f
     assert result.total_tickers == 1
     assert result.refreshed_tickers == 1
     assert [call["timespan"] for call in bars_client.calls] == ["day", "minute"]
+    assert bars_client.calls[1]["from_value"] == str(int(_dt(2026, 4, 2, 13, 30).timestamp() * 1000))
+    assert bars_client.calls[1]["to_value"] == str(int(_dt(2026, 4, 15, 15, 0).timestamp() * 1000))
     minute_rows = _list_1m_bars(
         session_factory,
         ticker="AAPL",
@@ -667,7 +669,6 @@ def test_bootstrap_writes_minute_and_completed_daily_canonical_storage(session_f
         end_at=_dt(2026, 4, 15, 13, 31),
     )
     assert [(row.bucket_start_at, row.session_kind, row.is_final) for row in minute_rows] == [
-        (_dt(2026, 4, 15, 8, 0), "pre_market", True),
         (_dt(2026, 4, 15, 13, 30), "regular", True),
     ]
     daily_rows = _list_1d_bars(

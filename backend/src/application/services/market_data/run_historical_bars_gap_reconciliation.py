@@ -61,8 +61,8 @@ class RunHistoricalBarsGapReconciliationService:
         timeout_before = effective_now - timedelta(minutes=MARKET_BARS_INITIALIZING_TIMEOUT_MINUTES)
         anchor_day = self._calendar.previous_or_same_trading_day(self._calendar.to_market_date(effective_now))
         minute_days = self._calendar.previous_trading_days(anchor_day, MARKET_BARS_1M_RETENTION_TRADING_DAYS)
-        minute_start_at = self._calendar.session_window(minute_days[0], "pre_market").start_at
-        minute_end_at = min(self._calendar.session_window(anchor_day, "after_hours").end_at, effective_now)
+        minute_start_at = self._calendar.regular_session_window(minute_days[0]).start_at
+        minute_end_at = min(self._calendar.regular_session_window(anchor_day).end_at, effective_now)
         daily_start_day = self._calendar.previous_trading_days(anchor_day, 90)[0]
 
         async with self._uow_factory.build() as uow:

@@ -37,7 +37,7 @@ Terminal 是 PRD001 第一阶段的核心使用界面，面向真实终端用户
 | P0 | 营销首页 | 表达 Trade Helper 定位，引导注册/登录/进入终端 |
 | P0 | Watchlist 基础管理 | 查询、新增、删除 ticker；默认按后端返回顺序展示；最多 50 个 |
 | P0 | 行情快照 | 批量展示 watchlist snapshot；轮询刷新；展示延迟/实时模式和最近更新时间 |
-| P0 | 图表基础 | 选中 ticker 后通过 REST polling 展示 bars；支持分时图、常用 resolution、session 切换 |
+| P0 | 图表基础 | 选中 ticker 后通过 REST polling 展示 regular-session bars；支持分时图和常用 resolution，不提供盘前/盘后 bars 切换 |
 | P0 | 终端用户状态提示 | 对数据准备中、部分可用、降级、失败等状态做用户可理解的提示 |
 | P1 | 单 watchlist 拖拽排序 | 支持用户在当前 watchlist 内拖拽调整顺序；若后端暂未提供排序持久化接口，需要先补齐接口再进入实现 |
 | P1 | 技术指标显示 | 图表支持 BOLL、MA30、MA60、MA200，并区分价格/K 线区域与 volume 区域 |
@@ -426,10 +426,10 @@ flowchart LR
 - MVP 支持的控件：
   - 图表模式：`line` 表示分时图。
   - Resolution：`1m`、`5m`、`15m`、`30m`、`60m`、`1D`、`1W`、`1M`。
-  - Session：`pre_market`、`regular`、`after_hours`。
+  - Session：固定为 `regular`；当前阶段不提供盘前/盘后 bars 切换。
   - 复权口径：默认 `split_adjusted`；以 `adjusted/raw` 作为用户可理解的切换。
 - Fill 默认使用 `carry_forward`，不作为 terminal 的主控件暴露。
-- 对不支持的组合，先依赖后端 `422 MARKET_BARS_UNSUPPORTED_SESSION_RESOLUTION`；接口规则稳定后，前端可提前禁用已知无效组合。
+- 对非 `regular` session 请求，后端返回 `422 MARKET_BARS_SESSION_UNSUPPORTED`；前端不暴露该切换。
 
 当前实现：
 
@@ -448,7 +448,7 @@ flowchart LR
 | `MARKET_SNAPSHOT_UPSTREAM_UNAVAILABLE` | Terminal 状态条降级；保留 last-known-good |
 | `MARKET_BARS_RANGE_INVALID` | Bars controls inline error |
 | `MARKET_BARS_RANGE_TOO_LARGE` | Bars controls inline error |
-| `MARKET_BARS_UNSUPPORTED_SESSION_RESOLUTION` | Controls inline error 或禁用对应组合 |
+| `MARKET_BARS_SESSION_UNSUPPORTED` | Bars controls inline error；当前前端不暴露非 regular session |
 
 ## 13. 原型说明
 

@@ -10,7 +10,6 @@ from application.services.market_data._bars_maintenance_support import (
     build_canonical_1m_rows,
     build_initializing_state,
     build_ready_state,
-    retain_latest_extended_session_rows,
 )
 from domain.entities import CanonicalBar, MarketDataMode, SnapshotCoordinatorRefreshResult, TickerBarsState
 from domain.rules import (
@@ -137,7 +136,7 @@ class RunTickerBarsBootstrapService:
             synced_at=now_synced_at,
         )
 
-        minute_start_at = self._calendar.session_window(minute_start_day, "pre_market").start_at
+        minute_start_at = self._calendar.regular_session_window(minute_start_day).start_at
         current_window_end = self._minute_window_end(anchor_day=anchor_day, effective_now=effective_now)
         minute_provider_bars = await self._bars_client.fetch_range(
             ticker=ticker,
@@ -154,10 +153,6 @@ class RunTickerBarsBootstrapService:
             calendar=self._calendar,
             effective_now=effective_now,
             synced_at=now_synced_at,
-        )
-        minute_rows = retain_latest_extended_session_rows(
-            rows=minute_rows,
-            latest_extended_trading_day=anchor_day,
         )
 
         async with self._uow_factory.build() as uow:
@@ -208,8 +203,8 @@ class RunTickerBarsBootstrapService:
     def _minute_window_end(self, *, anchor_day: date, effective_now: datetime) -> datetime:
         local_day = self._calendar.to_market_date(effective_now)
         if local_day != anchor_day or not self._calendar.is_trading_day(anchor_day):
-            return self._calendar.session_window(anchor_day, "after_hours").end_at
-        return min(self._calendar.session_window(anchor_day, "after_hours").end_at, effective_now)
+            return self._calendar.regular_session_window(anchor_day).end_at
+        return min(self._calendar.regular_session_window(anchor_day).end_at, effective_now)
 
     def _subtract_years(self, value: date, years: int) -> date:
         try:

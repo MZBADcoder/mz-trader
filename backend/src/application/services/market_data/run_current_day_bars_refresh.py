@@ -15,6 +15,8 @@ from infrastructure.external import MassiveBarsClient
 
 logger = logging.getLogger(__name__)
 
+POST_CLOSE_REFRESH_GRACE_MINUTES = 5
+
 
 class RunCurrentDayBarsRefreshService:
     """Refresh current-day minute bars for active watchlist tickers."""
@@ -46,9 +48,9 @@ class RunCurrentDayBarsRefreshService:
                 skip_reason="not_trading_day",
             )
 
-        pre_window = self._calendar.session_window(trading_day, "pre_market")
-        after_window = self._calendar.session_window(trading_day, "after_hours")
-        if effective_now <= pre_window.start_at or effective_now > after_window.end_at:
+        regular_window = self._calendar.regular_session_window(trading_day)
+        refresh_window_end = regular_window.end_at + timedelta(minutes=POST_CLOSE_REFRESH_GRACE_MINUTES)
+        if effective_now <= regular_window.start_at or effective_now > refresh_window_end:
             return SnapshotCoordinatorRefreshResult(
                 status="skipped",
                 total_tickers=0,
@@ -68,13 +70,14 @@ class RunCurrentDayBarsRefreshService:
             if state is not None and state.status not in {"ready", "degraded"}:
                 continue
             try:
-                fetch_start = max(pre_window.start_at, effective_now - timedelta(minutes=10))
+                fetch_end = min(regular_window.end_at, effective_now)
+                fetch_start = max(regular_window.start_at, fetch_end - timedelta(minutes=10))
                 provider_bars = await self._bars_client.fetch_range(
                     ticker=ticker,
                     multiplier=1,
                     timespan="minute",
                     from_value=str(int(fetch_start.timestamp() * 1000)),
-                    to_value=str(int(min(after_window.end_at, effective_now).timestamp() * 1000)),
+                    to_value=str(int(fetch_end.timestamp() * 1000)),
                     adjusted=True,
                 )
             except Exception:

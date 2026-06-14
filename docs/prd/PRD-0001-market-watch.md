@@ -87,7 +87,7 @@
 - `low`：当前交易日最低价。
 - `volume`：当前交易日累计成交量。
 - `prev_close`：上一交易日收盘价。
-- `market_status`：市场状态，MVP 统一为 `pre_market | regular | after_hours | closed`。
+- `market_status`：市场状态，MVP 统一为 `pre_market | regular | after_hours | closed`；该字段只描述 snapshot 当前市场状态，不表示 bars 支持盘前/盘后数据。
 - `delay_minutes`：当前环境配置的统一延迟分钟数，MVP 仅支持 `0` 或 `15`。
 - `is_realtime`：当 `delay_minutes == 0` 时为 `true`。
 - `provider_updated_at`：上游行情提供方返回的该条 snapshot 数据时间，不表示 backend 缓存写入时间。
@@ -148,10 +148,9 @@
   - `1W`
   - `1M`
   - `1Q`
-- `session` 在 MVP 至少支持：
-  - `pre_market`
+- `session` 在 MVP 仅支持：
   - `regular`
-  - `after_hours`
+- 当前阶段不查询、不持久化、不展示 `pre_market` / `after_hours` bars；snapshot 仍可展示当前市场状态。
 - bars 查询只读取数据库；数据库 miss 不在请求路径回源 Massive。
 - bars 存储层以 `1m` 与 `1d` 为 canonical source；其它 resolution 由 backend 聚合。
 - MVP bars 价格口径固定为 `split_adjusted`；未复权 `raw` 价格不作为当前产品需求。

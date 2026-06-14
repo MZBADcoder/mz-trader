@@ -152,14 +152,6 @@ class MarketBarsSessionUnsupportedError(AppError):
     status_code = 422
 
 
-class MarketBarsUnsupportedSessionResolutionError(AppError):
-    """Requested session + resolution combination is not supported."""
-
-    code = "MARKET_BARS_UNSUPPORTED_SESSION_RESOLUTION"
-    message = "Chart session and resolution combination is not supported."
-    status_code = 422
-
-
 class MarketBarsRangeInvalidError(AppError):
     """Requested chart range is invalid."""
 

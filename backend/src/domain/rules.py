@@ -14,7 +14,6 @@ from domain.exceptions import (
     MarketBarsRangeInvalidError,
     MarketBarsResolutionUnsupportedError,
     MarketBarsSessionUnsupportedError,
-    MarketBarsUnsupportedSessionResolutionError,
     MarketDataTickerInvalidError,
     MarketDataTickerLimitExceededError,
     ValidationError,
@@ -29,16 +28,14 @@ MIN_PASSWORD_LENGTH = 8
 TICKER_PATTERN = re.compile(r"^[A-Z0-9.-]{1,15}$")
 SUPPORTED_MARKET_DATA_DELAY_MINUTES = frozenset({0, 15})
 SUPPORTED_BARS_RESOLUTIONS = frozenset({"1m", "5m", "15m", "30m", "60m", "1D", "1W", "1M", "1Q"})
-SUPPORTED_BARS_SESSIONS = frozenset({"pre_market", "regular", "after_hours"})
+SUPPORTED_BARS_SESSIONS = frozenset({"regular"})
 SUPPORTED_BARS_ADJUSTMENTS = frozenset({"split_adjusted"})
 SUPPORTED_BARS_FILLS = frozenset({"carry_forward", "none"})
 TICKER_BARS_READINESS_STATES = frozenset({"pending", "initializing", "ready", "degraded", "failed"})
 MARKET_BARS_MAX_COUNT_BACK = 2_000
 MARKET_BARS_MAX_ESTIMATED_OUTPUT_ROWS = 5_000
 MARKET_BARS_1M_RETENTION_TRADING_DAYS = 10
-MARKET_BARS_EXTENDED_1M_RETENTION_TRADING_DAYS = 1
 MARKET_BARS_1D_RETENTION_YEARS = 10
-MARKET_BARS_EXTENDED_SESSION_KINDS = frozenset({"pre_market", "after_hours"})
 MARKET_BARS_INITIALIZING_TIMEOUT_MINUTES = 10
 
 
@@ -155,9 +152,6 @@ def validate_bars_query(
         raise MarketBarsAdjustmentUnsupportedError()
     if fill not in SUPPORTED_BARS_FILLS:
         raise ValidationError(detail="fill: Expected one of carry_forward, none.")
-    if resolution in {"1W", "1M", "1Q"} and session != "regular":
-        raise MarketBarsUnsupportedSessionResolutionError()
-
     normalized_from = _ensure_utc(from_time) if from_time is not None else None
     normalized_to = _ensure_utc(to_time) if to_time is not None else None
 

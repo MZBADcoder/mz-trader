@@ -6,7 +6,6 @@ from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 
 from domain.entities import CanonicalBar, ProviderBar, TickerBarsState
-from domain.rules import MARKET_BARS_EXTENDED_SESSION_KINDS
 from infrastructure.calendar import UsStockCalendar
 
 
@@ -22,7 +21,7 @@ def build_canonical_1m_rows(
     rows: list[CanonicalBar] = []
     for provider_bar in provider_bars:
         trading_day, session_kind = calendar.classify_session(provider_bar.time)
-        if session_kind is None:
+        if session_kind != "regular":
             continue
         rows.append(
             CanonicalBar(
@@ -83,19 +82,6 @@ def aggregate_daily_row(
         first_synced_at=synced_at,
         last_synced_at=synced_at,
     )
-
-
-def retain_latest_extended_session_rows(
-    *,
-    rows: list[CanonicalBar],
-    latest_extended_trading_day: date,
-) -> list[CanonicalBar]:
-    return [
-        row
-        for row in rows
-        if row.session_kind not in MARKET_BARS_EXTENDED_SESSION_KINDS
-        or row.trading_day >= latest_extended_trading_day
-    ]
 
 
 def build_ready_state(
@@ -181,6 +167,30 @@ def clamp_state_to_retention(
         last_1m_bucket_start_at=last_1m_bucket,
         earliest_1d_trading_day=earliest_1d,
         latest_1d_trading_day=latest_1d,
+        updated_at=now,
+    )
+
+
+def clamp_state_to_regular_1m_bounds(
+    *,
+    state: TickerBarsState,
+    regular_bounds: tuple[date, date, datetime] | None,
+    now: datetime,
+) -> TickerBarsState:
+    if regular_bounds is None:
+        return replace(
+            state,
+            earliest_1m_trading_day=None,
+            last_1m_trading_day=None,
+            last_1m_bucket_start_at=None,
+            updated_at=now,
+        )
+    earliest_1m, last_1m, last_1m_bucket = regular_bounds
+    return replace(
+        state,
+        earliest_1m_trading_day=earliest_1m,
+        last_1m_trading_day=last_1m,
+        last_1m_bucket_start_at=last_1m_bucket,
         updated_at=now,
     )
 
