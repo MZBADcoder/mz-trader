@@ -925,6 +925,52 @@ p {
   font-size: 12px;
 }
 
+.time-axis line {
+  stroke: rgba(255, 255, 255, 0.12);
+  vector-effect: non-scaling-stroke;
+}
+
+.time-axis text {
+  fill: var(--faint);
+  font-size: 12px;
+}
+
+.crosshair-line {
+  pointer-events: none;
+  stroke: rgba(185, 216, 255, 0.34);
+  stroke-dasharray: 4 5;
+  vector-effect: non-scaling-stroke;
+}
+
+.crosshair-dot {
+  fill: #b9d8ff;
+  pointer-events: none;
+  stroke: #090d12;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.ohlc-tooltip {
+  pointer-events: none;
+}
+
+.ohlc-tooltip rect {
+  fill: rgba(9, 13, 18, 0.94);
+  stroke: rgba(95, 168, 255, 0.46);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.ohlc-tooltip text {
+  fill: var(--text);
+  font-size: 12px;
+}
+
+.ohlc-tooltip .tooltip-time {
+  fill: #b9d8ff;
+  font-weight: 700;
+}
+
 .indicator-tools {
   align-items: center;
   display: flex;

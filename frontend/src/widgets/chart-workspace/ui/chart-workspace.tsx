@@ -88,7 +88,7 @@ export function ChartWorkspace({ onAuthExpired, selectedTicker, token }: Props) 
         {!isLoading && chartState.kind !== 'failed' && bars.length === 0 ? (
           <div className="chart-overlay">{t('terminal.noBars')}</div>
         ) : null}
-        {bars.length ? <BarsSvg bars={bars} locale={locale} /> : null}
+        {bars.length ? <BarsSvg bars={bars} locale={locale} marketTimezone={meta?.market_timezone ?? 'UTC'} /> : null}
       </div>
 
       <IndicatorLegend bars={bars} locale={locale} title={t('terminal.indicators')} />
@@ -129,10 +129,20 @@ function IndicatorLegend({ bars, locale, title }: { bars: BarItem[]; locale: str
   )
 }
 
-function BarsSvg({ bars, locale }: { bars: BarItem[]; locale: string }) {
+function BarsSvg({
+  bars,
+  locale,
+  marketTimezone,
+}: {
+  bars: BarItem[]
+  locale: string
+  marketTimezone: string
+}) {
   const width = 960
   const priceHeight = 360
   const volumeHeight = 100
+  const timeAxisHeight = 34
+  const totalHeight = priceHeight + volumeHeight + timeAxisHeight
   const padding = 28
   const visibleLimit = 92
   const indicators = calculateIndicators(bars)
@@ -144,6 +154,7 @@ function BarsSvg({ bars, locale }: { bars: BarItem[]; locale: string }) {
     windowStart: maxWindowStart,
   }))
   const [isDragging, setIsDragging] = useState(false)
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null)
   const dragRef = useRef<{
     pointerId: number
     startWindow: number
@@ -219,6 +230,10 @@ function BarsSvg({ bars, locale }: { bars: BarItem[]; locale: string }) {
   const latest = visibleBars.at(-1)
   const earliest = visibleBars[0]
   const canPan = maxWindowStart > 0
+  const hoveredBar = hoverIndex === null ? null : visibleBars[hoverIndex]
+  const hoveredX = hoverIndex === null ? null : xForIndex(hoverIndex)
+  const hoveredCloseY = hoveredBar ? yForPrice(hoveredBar.close) : null
+  const timeTicks = buildTimeTicks(visibleBars, xForIndex)
 
   const handlePointerDown = (event: PointerEvent<SVGSVGElement>) => {
     if (!canPan || !step) {
@@ -232,6 +247,7 @@ function BarsSvg({ bars, locale }: { bars: BarItem[]; locale: string }) {
     }
     event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)
+    setHoverIndex(null)
     setIsDragging(true)
   }
 
@@ -246,6 +262,22 @@ function BarsSvg({ bars, locale }: { bars: BarItem[]; locale: string }) {
       barsKey,
       windowStart: clamp(drag.startWindow + deltaBars, 0, maxWindowStart),
     })
+    setHoverIndex(null)
+  }
+
+  const handlePointerHover = (event: PointerEvent<SVGSVGElement>) => {
+    if (dragRef.current || !step) {
+      return
+    }
+    const rect = event.currentTarget.getBoundingClientRect()
+    const svgX = ((event.clientX - rect.left) / rect.width) * width
+    const svgY = ((event.clientY - rect.top) / rect.height) * totalHeight
+    const isInPlotArea = svgX >= padding && svgX <= width - padding && svgY >= padding && svgY <= priceHeight + volumeHeight
+    if (!isInPlotArea) {
+      setHoverIndex(null)
+      return
+    }
+    setHoverIndex(clamp(Math.round((svgX - padding - step / 2) / step), 0, visibleBars.length - 1))
   }
 
   const handlePointerEnd = (event: PointerEvent<SVGSVGElement>) => {
@@ -258,16 +290,26 @@ function BarsSvg({ bars, locale }: { bars: BarItem[]; locale: string }) {
     }
   }
 
+  const handlePointerLeave = () => {
+    if (!dragRef.current) {
+      setHoverIndex(null)
+    }
+  }
+
   return (
     <svg
       aria-label="Candlestick chart"
       className={classNames('bars-svg', canPan && 'pannable', isDragging && 'dragging')}
       onPointerCancel={handlePointerEnd}
       onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
+      onPointerLeave={handlePointerLeave}
+      onPointerMove={(event) => {
+        handlePointerMove(event)
+        handlePointerHover(event)
+      }}
       onPointerUp={handlePointerEnd}
       role="img"
-      viewBox={`0 0 ${width} ${priceHeight + volumeHeight}`}
+      viewBox={`0 0 ${width} ${totalHeight}`}
     >
       <title>
         {latest
@@ -342,12 +384,116 @@ function BarsSvg({ bars, locale }: { bars: BarItem[]; locale: string }) {
       <text className="volume-axis-label" x={padding} y={priceHeight + 18}>
         VOL
       </text>
+      <g className="time-axis">
+        <line x1={padding} x2={width - padding} y1={priceHeight + volumeHeight + 1} y2={priceHeight + volumeHeight + 1} />
+        {timeTicks.map((tick) => (
+          <g key={`${tick.index}-${tick.time}`}>
+            <line x1={tick.x} x2={tick.x} y1={priceHeight + volumeHeight + 1} y2={priceHeight + volumeHeight + 7} />
+            <text textAnchor={tick.anchor} x={tick.x} y={priceHeight + volumeHeight + 24}>
+              {formatAxisTime(tick.time, locale, marketTimezone, visibleBars)}
+            </text>
+          </g>
+        ))}
+      </g>
+      {hoveredBar && hoveredX !== null && hoveredCloseY !== null ? (
+        <HoverDetails
+          bar={hoveredBar}
+          closeY={hoveredCloseY}
+          locale={locale}
+          marketTimezone={marketTimezone}
+          maxX={width}
+          priceHeight={priceHeight}
+          x={hoveredX}
+        />
+      ) : null}
     </svg>
   )
 }
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max)
+}
+
+function buildTimeTicks(bars: BarItem[], xForIndex: (index: number) => number) {
+  if (!bars.length) {
+    return []
+  }
+  const targetIndexes = [0, 0.25, 0.5, 0.75, 1].map((ratio) =>
+    Math.round((bars.length - 1) * ratio),
+  )
+  const indexes = [...new Set(targetIndexes)].filter((index) => bars[index])
+  return indexes.map((index, position) => ({
+    anchor: getTimeTickAnchor(position, indexes.length),
+    index,
+    time: bars[index].time,
+    x: xForIndex(index),
+  }))
+}
+
+function getTimeTickAnchor(position: number, count: number): 'end' | 'middle' | 'start' {
+  if (position === 0) {
+    return 'start'
+  }
+  if (position === count - 1) {
+    return 'end'
+  }
+  return 'middle'
+}
+
+function formatAxisTime(time: string, locale: string, marketTimezone: string, bars: BarItem[]) {
+  const firstTime = bars[0]?.time
+  const lastTime = bars.at(-1)?.time
+  const durationMs = firstTime && lastTime ? new Date(lastTime).getTime() - new Date(firstTime).getTime() : 0
+  const options: Intl.DateTimeFormatOptions =
+    durationMs > 36 * 60 * 60 * 1000
+      ? { day: '2-digit', month: 'short', timeZone: marketTimezone }
+      : { hour: '2-digit', minute: '2-digit', timeZone: marketTimezone }
+  return new Intl.DateTimeFormat(locale, options).format(new Date(time))
+}
+
+function HoverDetails({
+  bar,
+  closeY,
+  locale,
+  marketTimezone,
+  maxX,
+  priceHeight,
+  x,
+}: {
+  bar: BarItem
+  closeY: number
+  locale: string
+  marketTimezone: string
+  maxX: number
+  priceHeight: number
+  x: number
+}) {
+  const tooltipWidth = 184
+  const tooltipHeight = 106
+  const tooltipX = x > maxX - tooltipWidth - 28 ? x - tooltipWidth - 14 : x + 14
+  const tooltipY = closeY > tooltipHeight + 18 ? closeY - tooltipHeight - 12 : closeY + 16
+  return (
+    <g className="hover-layer">
+      <line className="crosshair-line" x1={x} x2={x} y1={28} y2={priceHeight + 100} />
+      <line className="crosshair-line" x1={28} x2={maxX - 28} y1={closeY} y2={closeY} />
+      <circle className="crosshair-dot" cx={x} cy={closeY} r={4} />
+      <g className="ohlc-tooltip" transform={`translate(${tooltipX} ${tooltipY})`}>
+        <rect height={tooltipHeight} rx={6} width={tooltipWidth} />
+        <text className="tooltip-time" x={10} y={20}>
+          {formatDateTime(bar.time, locale, { timeZone: marketTimezone })}
+        </text>
+        <text x={10} y={42}>
+          O {formatCurrency(bar.open, locale)}  H {formatCurrency(bar.high, locale)}
+        </text>
+        <text x={10} y={62}>
+          L {formatCurrency(bar.low, locale)}  C {formatCurrency(bar.close, locale)}
+        </text>
+        <text x={10} y={84}>
+          V {formatCompactNumber(bar.volume, locale)}
+        </text>
+      </g>
+    </g>
+  )
 }
 
 type IndicatorPoint = {
