@@ -33,7 +33,8 @@ export function useBarsPolling(
         query.resolution,
         query.session,
         query.adjustment,
-        query.count_back,
+        query.count_back ?? '',
+        query.lookback_days ?? '',
       ].join('|')
     : ''
 

@@ -18,10 +18,13 @@ const defaultControls: BarsControlsValue = {
   resolution: '5m',
   session: 'regular',
 }
+const intradayHistoryLookbackDays = 14
+const higherTimeframeCountBack = 260
 
 export function ChartWorkspace({ onAuthExpired, selectedTicker, token }: Props) {
   const { locale, t } = useI18n()
   const [controls, setControls] = useState<BarsControlsValue>(defaultControls)
+  const showIndicators = !isIntradayResolution(controls.resolution)
   const barsQuery = useMemo(
     () =>
       selectedTicker
@@ -30,7 +33,9 @@ export function ChartWorkspace({ onAuthExpired, selectedTicker, token }: Props) 
             resolution: controls.resolution,
             session: controls.session,
             adjustment: controls.adjustment,
-            count_back: 260,
+            ...(isIntradayResolution(controls.resolution)
+              ? { lookback_days: intradayHistoryLookbackDays }
+              : { count_back: higherTimeframeCountBack }),
           }
         : null,
     [controls.adjustment, controls.resolution, controls.session, selectedTicker],
@@ -88,10 +93,17 @@ export function ChartWorkspace({ onAuthExpired, selectedTicker, token }: Props) 
         {!isLoading && chartState.kind !== 'failed' && bars.length === 0 ? (
           <div className="chart-overlay">{t('terminal.noBars')}</div>
         ) : null}
-        {bars.length ? <BarsSvg bars={bars} locale={locale} marketTimezone={meta?.market_timezone ?? 'UTC'} /> : null}
+        {bars.length ? (
+          <BarsSvg
+            bars={bars}
+            locale={locale}
+            marketTimezone={meta?.market_timezone ?? 'UTC'}
+            showIndicators={showIndicators}
+          />
+        ) : null}
       </div>
 
-      <IndicatorLegend bars={bars} locale={locale} title={t('terminal.indicators')} />
+      {showIndicators ? <IndicatorLegend bars={bars} locale={locale} title={t('terminal.indicators')} /> : null}
 
       <footer className="chart-footer">
         <span>{meta?.partial_range ? t('terminal.partialRange') : t('terminal.readinessReady')}</span>
@@ -100,6 +112,10 @@ export function ChartWorkspace({ onAuthExpired, selectedTicker, token }: Props) 
       </footer>
     </section>
   )
+}
+
+function isIntradayResolution(resolution: string) {
+  return resolution.endsWith('m')
 }
 
 function IndicatorLegend({ bars, locale, title }: { bars: BarItem[]; locale: string; title: string }) {
@@ -133,10 +149,12 @@ function BarsSvg({
   bars,
   locale,
   marketTimezone,
+  showIndicators,
 }: {
   bars: BarItem[]
   locale: string
   marketTimezone: string
+  showIndicators: boolean
 }) {
   const width = 960
   const priceHeight = 360
@@ -145,7 +163,7 @@ function BarsSvg({
   const totalHeight = priceHeight + volumeHeight + timeAxisHeight
   const padding = 28
   const visibleLimit = 92
-  const indicators = calculateIndicators(bars)
+  const indicators = showIndicators ? calculateIndicators(bars) : []
   const visibleCount = Math.min(bars.length, visibleLimit)
   const maxWindowStart = Math.max(0, bars.length - visibleCount)
   const barsKey = `${bars[0]?.time ?? ''}:${bars.at(-1)?.time ?? ''}:${bars.length}`
@@ -165,16 +183,18 @@ function BarsSvg({
     windowState.barsKey === barsKey ? clamp(windowState.windowStart, 0, maxWindowStart) : maxWindowStart
 
   const visibleBars = bars.slice(windowStart, windowStart + visibleCount)
-  const visibleIndicators = indicators.slice(windowStart, windowStart + visibleCount)
+  const visibleIndicators = showIndicators ? indicators.slice(windowStart, windowStart + visibleCount) : []
   const volumes = visibleBars.map((bar) => bar.volume)
-  const indicatorValues = visibleIndicators.flatMap((indicator) => [
-    indicator.ma30,
-    indicator.ma60,
-    indicator.ma200,
-    indicator.bollUpper,
-    indicator.bollMiddle,
-    indicator.bollLower,
-  ])
+  const indicatorValues = showIndicators
+    ? visibleIndicators.flatMap((indicator) => [
+        indicator.ma30,
+        indicator.ma60,
+        indicator.ma200,
+        indicator.bollUpper,
+        indicator.bollMiddle,
+        indicator.bollLower,
+      ])
+    : []
   const priceValues = [
     ...visibleBars.flatMap((bar) => [bar.open, bar.high, bar.low, bar.close]),
     ...indicatorValues.filter((value): value is number => value !== null),
@@ -322,7 +342,7 @@ function BarsSvg({
           return <line key={line} x1={padding} x2={width - padding} y1={y} y2={y} />
         })}
       </g>
-      {bollBandPath ? <path className="boll-band" d={bollBandPath} /> : null}
+      {showIndicators && bollBandPath ? <path className="boll-band" d={bollBandPath} /> : null}
       <g className="candles">
         {visibleBars.map((bar, index) => {
           const x = xForIndex(index)
@@ -354,12 +374,16 @@ function BarsSvg({
           )
         })}
       </g>
-      <path className="indicator-line boll" d={bollUpperPath} />
-      <path className="indicator-line boll middle" d={bollMiddlePath} />
-      <path className="indicator-line boll" d={bollLowerPath} />
-      <path className="indicator-line ma200" d={ma200Path} />
-      <path className="indicator-line ma60" d={ma60Path} />
-      <path className="indicator-line ma30" d={ma30Path} />
+      {showIndicators ? (
+        <>
+          <path className="indicator-line boll" d={bollUpperPath} />
+          <path className="indicator-line boll middle" d={bollMiddlePath} />
+          <path className="indicator-line boll" d={bollLowerPath} />
+          <path className="indicator-line ma200" d={ma200Path} />
+          <path className="indicator-line ma60" d={ma60Path} />
+          <path className="indicator-line ma30" d={ma30Path} />
+        </>
+      ) : null}
       <line className="volume-separator" x1={padding} x2={width - padding} y1={priceHeight} y2={priceHeight} />
       <g className="volume-bars">
         {visibleBars.map((bar, index) => {

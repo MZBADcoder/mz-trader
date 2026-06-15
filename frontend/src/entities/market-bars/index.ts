@@ -47,25 +47,36 @@ export type BarsQuery = {
   resolution: string
   session: string
   adjustment: SupportedBarAdjustment
-  count_back: number
+  count_back?: number
+  lookback_days?: number
 }
 
 export async function fetchBars(token: string, query: BarsQuery, signal?: AbortSignal) {
+  const requestQuery: Record<string, boolean | number | string> = {
+    ticker: query.ticker,
+    resolution: query.resolution,
+    session: query.session,
+    adjustment: query.adjustment,
+    fill: 'carry_forward',
+    include_partial: true,
+  }
+
+  if (query.lookback_days !== undefined) {
+    const to = new Date()
+    const from = new Date(to.getTime() - query.lookback_days * 24 * 60 * 60 * 1000)
+    requestQuery.from = from.toISOString()
+    requestQuery.to = to.toISOString()
+  } else if (query.count_back !== undefined) {
+    requestQuery.count_back = query.count_back
+  }
+
   return apiRequest<BarsResponse>(
     '/market-data/bars',
     {},
     {
       token,
       signal,
-      query: {
-        ticker: query.ticker,
-        resolution: query.resolution,
-        session: query.session,
-        adjustment: query.adjustment,
-        fill: 'carry_forward',
-        include_partial: true,
-        count_back: query.count_back,
-      },
+      query: requestQuery,
     },
   )
 }
