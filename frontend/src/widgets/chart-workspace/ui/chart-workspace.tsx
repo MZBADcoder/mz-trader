@@ -163,6 +163,7 @@ function BarsSvg({
   const totalHeight = priceHeight + volumeHeight + timeAxisHeight
   const padding = 28
   const visibleLimit = 92
+  const visibleSlotCount = visibleLimit
   const indicators = showIndicators ? calculateIndicators(bars) : []
   const visibleCount = Math.min(bars.length, visibleLimit)
   const maxWindowStart = Math.max(0, bars.length - visibleCount)
@@ -203,7 +204,7 @@ function BarsSvg({
   const maxPrice = Math.max(...priceValues)
   const maxVolume = Math.max(...volumes, 1)
   const priceSpan = Math.max(maxPrice - minPrice, 0.01)
-  const step = visibleBars.length ? (width - padding * 2) / visibleBars.length : 0
+  const step = visibleBars.length ? (width - padding * 2) / visibleSlotCount : 0
   const candleWidth = Math.max(4, Math.min(12, step * 0.58))
   const volumeWidth = Math.max(2, Math.min(candleWidth, step * 0.7))
 
@@ -297,7 +298,8 @@ function BarsSvg({
       setHoverIndex(null)
       return
     }
-    setHoverIndex(clamp(Math.round((svgX - padding - step / 2) / step), 0, visibleBars.length - 1))
+    const nextHoverIndex = Math.round((svgX - padding - step / 2) / step)
+    setHoverIndex(nextHoverIndex >= 0 && nextHoverIndex < visibleBars.length ? nextHoverIndex : null)
   }
 
   const handlePointerEnd = (event: PointerEvent<SVGSVGElement>) => {
