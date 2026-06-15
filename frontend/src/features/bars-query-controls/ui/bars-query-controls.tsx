@@ -33,7 +33,7 @@ export function BarsQueryControls({ error, onChange, value }: Props) {
               type="button"
               onClick={() => onChange({ ...value, resolution })}
             >
-              {resolution}
+              {resolutionLabel(resolution, t)}
             </button>
           ))}
         </div>
@@ -93,6 +93,10 @@ function sessionLabel(session: BarSession, t: (key: `terminal.${string}`) => str
     return t('terminal.afterHours')
   }
   return t('terminal.regular')
+}
+
+function resolutionLabel(resolution: BarResolution, t: (key: `terminal.${string}`) => string) {
+  return resolution === 'intraday' ? t('terminal.intraday') : resolution
 }
 
 function isSupportedAdjustment(adjustment: BarAdjustmentOption): adjustment is BarAdjustment {

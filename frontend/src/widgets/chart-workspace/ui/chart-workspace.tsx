@@ -15,7 +15,7 @@ type Props = {
 
 const defaultControls: BarsControlsValue = {
   adjustment: 'split_adjusted',
-  resolution: '5m',
+  resolution: 'intraday',
   session: 'regular',
 }
 const intradayHistoryLookbackDays = 14
@@ -24,21 +24,24 @@ const higherTimeframeCountBack = 260
 export function ChartWorkspace({ onAuthExpired, selectedTicker, token }: Props) {
   const { locale, t } = useI18n()
   const [controls, setControls] = useState<BarsControlsValue>(defaultControls)
-  const showIndicators = !isIntradayResolution(controls.resolution)
+  const isTimeShareMode = controls.resolution === 'intraday'
+  const showIndicators = !isTimeShareMode && !isIntradayResolution(controls.resolution)
   const barsQuery = useMemo(
     () =>
       selectedTicker
         ? {
             ticker: selectedTicker,
-            resolution: controls.resolution,
+            resolution: isTimeShareMode ? '1m' : controls.resolution,
             session: controls.session,
             adjustment: controls.adjustment,
-            ...(isIntradayResolution(controls.resolution)
+            ...(isTimeShareMode
+              ? {}
+              : isIntradayResolution(controls.resolution)
               ? { lookback_days: intradayHistoryLookbackDays }
               : { count_back: higherTimeframeCountBack }),
           }
         : null,
-    [controls.adjustment, controls.resolution, controls.session, selectedTicker],
+    [controls.adjustment, controls.resolution, controls.session, isTimeShareMode, selectedTicker],
   )
   const barsPolling = useBarsPolling(token, barsQuery, onAuthExpired)
   const { bars, error, isLoading, meta, state } = barsPolling
@@ -93,7 +96,10 @@ export function ChartWorkspace({ onAuthExpired, selectedTicker, token }: Props) 
         {!isLoading && chartState.kind !== 'failed' && bars.length === 0 ? (
           <div className="chart-overlay">{t('terminal.noBars')}</div>
         ) : null}
-        {bars.length ? (
+        {bars.length && isTimeShareMode ? (
+          <TimeShareSvg bars={bars} locale={locale} marketTimezone={meta?.market_timezone ?? 'UTC'} />
+        ) : null}
+        {bars.length && !isTimeShareMode ? (
           <BarsSvg
             bars={bars}
             locale={locale}
@@ -142,6 +148,195 @@ function IndicatorLegend({ bars, locale, title }: { bars: BarItem[]; locale: str
         MA 200 {formatCurrency(latest?.ma200, locale)}
       </span>
     </div>
+  )
+}
+
+function TimeShareSvg({
+  bars,
+  locale,
+  marketTimezone,
+}: {
+  bars: BarItem[]
+  locale: string
+  marketTimezone: string
+}) {
+  const width = 960
+  const priceHeight = 360
+  const volumeHeight = 100
+  const timeAxisHeight = 34
+  const totalHeight = priceHeight + volumeHeight + timeAxisHeight
+  const padding = 28
+  const priceAxisWidth = 72
+  const plotLeft = padding
+  const plotRight = width - padding - priceAxisWidth
+  const sessionMinuteSlots = 390
+  const visibleBars = bars.slice(0, sessionMinuteSlots)
+  const volumes = visibleBars.map((bar) => bar.volume)
+  const priceValues = visibleBars.flatMap((bar) => [bar.open, bar.high, bar.low, bar.close])
+  const minPrice = Math.min(...priceValues)
+  const maxPrice = Math.max(...priceValues)
+  const maxVolume = Math.max(...volumes, 1)
+  const priceSpan = Math.max(maxPrice - minPrice, 0.01)
+  const step = visibleBars.length ? (plotRight - plotLeft) / sessionMinuteSlots : 0
+  const volumeWidth = Math.max(1.4, Math.min(3, step * 0.72))
+  const xForIndex = (index: number) => plotLeft + step / 2 + index * step
+  const yForPrice = (price: number) =>
+    padding + ((maxPrice - price) / priceSpan) * (priceHeight - padding * 2)
+  const linePath = buildLinePath(
+    visibleBars.map((bar) => bar.close),
+    xForIndex,
+    yForPrice,
+  )
+  const areaPath = buildAreaPath(
+    visibleBars.map((bar) => bar.close),
+    xForIndex,
+    yForPrice,
+    priceHeight,
+  )
+  const timeTicks = buildTimeShareTicks(visibleBars, xForIndex)
+  const priceTicks = buildPriceTicks(minPrice, maxPrice, 4).map((price) => ({
+    price,
+    y: yForPrice(price),
+  }))
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null)
+  const latest = visibleBars.at(-1)
+  const earliest = visibleBars[0]
+  const hoveredBar = hoverIndex === null ? null : visibleBars[hoverIndex]
+  const hoveredX = hoverIndex === null ? null : xForIndex(hoverIndex)
+  const hoveredCloseY = hoveredBar ? yForPrice(hoveredBar.close) : null
+
+  const handlePointerHover = (event: PointerEvent<SVGSVGElement>) => {
+    if (!step) {
+      return
+    }
+    const rect = event.currentTarget.getBoundingClientRect()
+    const svgX = ((event.clientX - rect.left) / rect.width) * width
+    const svgY = ((event.clientY - rect.top) / rect.height) * totalHeight
+    const isInPlotArea = svgX >= plotLeft && svgX <= plotRight && svgY >= padding && svgY <= priceHeight + volumeHeight
+    if (!isInPlotArea) {
+      setHoverIndex(null)
+      return
+    }
+    const nextHoverIndex = Math.round((svgX - plotLeft - step / 2) / step)
+    setHoverIndex(nextHoverIndex >= 0 && nextHoverIndex < visibleBars.length ? nextHoverIndex : null)
+  }
+
+  return (
+    <svg
+      aria-label="Intraday time-sharing chart"
+      className="bars-svg"
+      onPointerLeave={() => setHoverIndex(null)}
+      onPointerMove={handlePointerHover}
+      role="img"
+      viewBox={`0 0 ${width} ${totalHeight}`}
+    >
+      <title>
+        {latest
+          ? `${earliest?.time ?? ''} - ${latest.time} close ${latest.close} volume ${latest.volume}`
+          : 'Intraday time-sharing chart'}
+      </title>
+      <g className="grid-lines">
+        {priceTicks.map((tick) => (
+          <line key={tick.price} x1={plotLeft} x2={plotRight} y1={tick.y} y2={tick.y} />
+        ))}
+      </g>
+      <g className="price-axis">
+        <line x1={plotRight} x2={plotRight} y1={padding} y2={priceHeight - padding} />
+        {priceTicks.map((tick) => (
+          <text dominantBaseline="middle" key={tick.price} x={plotRight + 10} y={tick.y}>
+            {formatAxisPrice(tick.price, locale)}
+          </text>
+        ))}
+      </g>
+      {areaPath ? <path className="timeshare-area" d={areaPath} /> : null}
+      {linePath ? <path className="timeshare-line" d={linePath} /> : null}
+      <line className="volume-separator" x1={plotLeft} x2={plotRight} y1={priceHeight} y2={priceHeight} />
+      <g className="volume-bars">
+        {visibleBars.map((bar, index) => {
+          const x = xForIndex(index)
+          const height = (bar.volume / maxVolume) * (volumeHeight - 18)
+          const direction = bar.close > bar.open ? 'up' : bar.close < bar.open ? 'down' : 'flat'
+          return (
+            <rect
+              className={direction}
+              height={height}
+              key={`${bar.time}-${index}`}
+              width={volumeWidth}
+              x={x - volumeWidth / 2}
+              y={priceHeight + volumeHeight - height - 8}
+            />
+          )
+        })}
+      </g>
+      <text className="volume-axis-label" x={plotLeft} y={priceHeight + 18}>
+        VOL
+      </text>
+      <g className="time-axis">
+        <line x1={plotLeft} x2={plotRight} y1={priceHeight + volumeHeight + 1} y2={priceHeight + volumeHeight + 1} />
+        {timeTicks.map((tick) => (
+          <g key={`${tick.index}-${tick.time}`}>
+            <line x1={tick.x} x2={tick.x} y1={priceHeight + volumeHeight + 1} y2={priceHeight + volumeHeight + 7} />
+            <text textAnchor={tick.anchor} x={tick.x} y={priceHeight + volumeHeight + 24}>
+              {formatAxisTime(tick.time, locale, marketTimezone, visibleBars)}
+            </text>
+          </g>
+        ))}
+      </g>
+      {hoveredBar && hoveredX !== null && hoveredCloseY !== null ? (
+        <TimeShareHoverDetails
+          bar={hoveredBar}
+          closeY={hoveredCloseY}
+          locale={locale}
+          marketTimezone={marketTimezone}
+          maxX={plotRight}
+          priceHeight={priceHeight}
+          x={hoveredX}
+        />
+      ) : null}
+    </svg>
+  )
+}
+
+function TimeShareHoverDetails({
+  bar,
+  closeY,
+  locale,
+  marketTimezone,
+  maxX,
+  priceHeight,
+  x,
+}: {
+  bar: BarItem
+  closeY: number
+  locale: string
+  marketTimezone: string
+  maxX: number
+  priceHeight: number
+  x: number
+}) {
+  const tooltipWidth = 172
+  const tooltipHeight = 82
+  const tooltipX = x > maxX - tooltipWidth - 28 ? x - tooltipWidth - 14 : x + 14
+  const tooltipY = closeY > tooltipHeight + 18 ? closeY - tooltipHeight - 12 : closeY + 16
+
+  return (
+    <g className="hover-layer">
+      <line className="crosshair-line" x1={x} x2={x} y1={28} y2={priceHeight + 100} />
+      <line className="crosshair-line" x1={28} x2={maxX} y1={closeY} y2={closeY} />
+      <circle className="crosshair-dot" cx={x} cy={closeY} r={4} />
+      <g className="ohlc-tooltip" transform={`translate(${tooltipX} ${tooltipY})`}>
+        <rect height={tooltipHeight} rx={6} width={tooltipWidth} />
+        <text className="tooltip-time" x={10} y={20}>
+          {formatDateTime(bar.time, locale, { timeZone: marketTimezone })}
+        </text>
+        <text x={10} y={45}>
+          Price {formatCurrency(bar.close, locale)}
+        </text>
+        <text x={10} y={66}>
+          V {formatCompactNumber(bar.volume, locale)}
+        </text>
+      </g>
+    </g>
   )
 }
 
@@ -476,6 +671,31 @@ function buildTimeTicks(bars: BarItem[], xForIndex: (index: number) => number) {
   }))
 }
 
+function buildTimeShareTicks(bars: BarItem[], xForIndex: (index: number) => number) {
+  if (!bars.length) {
+    return []
+  }
+  const minTickSpacing = 120
+  const targetRatios = bars.length < 120 ? [0, 1] : [0, 0.25, 0.5, 0.75, 1]
+  const targetIndexes = targetRatios.map((ratio) => Math.round((bars.length - 1) * ratio))
+  const indexes = [...new Set(targetIndexes)]
+    .filter((index) => bars[index])
+    .reduce<number[]>((visibleIndexes, index) => {
+      const previousIndex = visibleIndexes.at(-1)
+      if (previousIndex !== undefined && xForIndex(index) - xForIndex(previousIndex) < minTickSpacing) {
+        return visibleIndexes
+      }
+      return [...visibleIndexes, index]
+    }, [])
+
+  return indexes.map((index, position) => ({
+    anchor: getTimeTickAnchor(position, indexes.length),
+    index,
+    time: bars[index].time,
+    x: xForIndex(index),
+  }))
+}
+
 function getTimeTickAnchor(position: number, count: number): 'end' | 'middle' | 'start' {
   if (position === 0) {
     return 'start'
@@ -613,6 +833,26 @@ function buildLinePath(
     d += `${d ? ' L' : 'M'} ${xForIndex(index)},${yForPrice(value)}`
   })
   return d
+}
+
+function buildAreaPath(
+  values: Array<number | null>,
+  xForIndex: (index: number) => number,
+  yForPrice: (price: number) => number,
+  baselineY: number,
+) {
+  const points = values
+    .map((value, index) => (value === null ? null : { x: xForIndex(index), y: yForPrice(value) }))
+    .filter((point): point is { x: number; y: number } => point !== null)
+
+  if (!points.length) {
+    return ''
+  }
+
+  const line = points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x},${point.y}`)
+  const first = points[0]!
+  const last = points[points.length - 1]!
+  return [...line, `L ${last.x},${baselineY}`, `L ${first.x},${baselineY}`, 'Z'].join(' ')
 }
 
 function buildBandPath(
