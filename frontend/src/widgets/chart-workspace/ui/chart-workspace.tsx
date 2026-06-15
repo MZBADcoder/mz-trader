@@ -162,6 +162,9 @@ function BarsSvg({
   const timeAxisHeight = 34
   const totalHeight = priceHeight + volumeHeight + timeAxisHeight
   const padding = 28
+  const priceAxisWidth = 72
+  const plotLeft = padding
+  const plotRight = width - padding - priceAxisWidth
   const visibleLimit = 92
   const visibleSlotCount = visibleLimit
   const indicators = showIndicators ? calculateIndicators(bars) : []
@@ -204,11 +207,11 @@ function BarsSvg({
   const maxPrice = Math.max(...priceValues)
   const maxVolume = Math.max(...volumes, 1)
   const priceSpan = Math.max(maxPrice - minPrice, 0.01)
-  const step = visibleBars.length ? (width - padding * 2) / visibleSlotCount : 0
+  const step = visibleBars.length ? (plotRight - plotLeft) / visibleSlotCount : 0
   const candleWidth = Math.max(4, Math.min(12, step * 0.58))
   const volumeWidth = Math.max(2, Math.min(candleWidth, step * 0.7))
 
-  const xForIndex = (index: number) => padding + step / 2 + index * step
+  const xForIndex = (index: number) => plotLeft + step / 2 + index * step
   const yForPrice = (price: number) =>
     padding + ((maxPrice - price) / priceSpan) * (priceHeight - padding * 2)
   const ma30Path = buildLinePath(
@@ -255,6 +258,10 @@ function BarsSvg({
   const hoveredX = hoverIndex === null ? null : xForIndex(hoverIndex)
   const hoveredCloseY = hoveredBar ? yForPrice(hoveredBar.close) : null
   const timeTicks = buildTimeTicks(visibleBars, xForIndex)
+  const priceTicks = buildPriceTicks(minPrice, maxPrice, 4).map((price) => ({
+    price,
+    y: yForPrice(price),
+  }))
 
   const handlePointerDown = (event: PointerEvent<SVGSVGElement>) => {
     if (!canPan || !step) {
@@ -293,12 +300,12 @@ function BarsSvg({
     const rect = event.currentTarget.getBoundingClientRect()
     const svgX = ((event.clientX - rect.left) / rect.width) * width
     const svgY = ((event.clientY - rect.top) / rect.height) * totalHeight
-    const isInPlotArea = svgX >= padding && svgX <= width - padding && svgY >= padding && svgY <= priceHeight + volumeHeight
+    const isInPlotArea = svgX >= plotLeft && svgX <= plotRight && svgY >= padding && svgY <= priceHeight + volumeHeight
     if (!isInPlotArea) {
       setHoverIndex(null)
       return
     }
-    const nextHoverIndex = Math.round((svgX - padding - step / 2) / step)
+    const nextHoverIndex = Math.round((svgX - plotLeft - step / 2) / step)
     setHoverIndex(nextHoverIndex >= 0 && nextHoverIndex < visibleBars.length ? nextHoverIndex : null)
   }
 
@@ -339,10 +346,17 @@ function BarsSvg({
           : 'Candlestick chart'}
       </title>
       <g className="grid-lines">
-        {[0, 1, 2, 3].map((line) => {
-          const y = padding + line * ((priceHeight - padding * 2) / 3)
-          return <line key={line} x1={padding} x2={width - padding} y1={y} y2={y} />
-        })}
+        {priceTicks.map((tick) => (
+          <line key={tick.price} x1={plotLeft} x2={plotRight} y1={tick.y} y2={tick.y} />
+        ))}
+      </g>
+      <g className="price-axis">
+        <line x1={plotRight} x2={plotRight} y1={padding} y2={priceHeight - padding} />
+        {priceTicks.map((tick) => (
+          <text dominantBaseline="middle" key={tick.price} x={plotRight + 10} y={tick.y}>
+            {formatAxisPrice(tick.price, locale)}
+          </text>
+        ))}
       </g>
       {showIndicators && bollBandPath ? <path className="boll-band" d={bollBandPath} /> : null}
       <g className="candles">
@@ -386,7 +400,7 @@ function BarsSvg({
           <path className="indicator-line ma30" d={ma30Path} />
         </>
       ) : null}
-      <line className="volume-separator" x1={padding} x2={width - padding} y1={priceHeight} y2={priceHeight} />
+      <line className="volume-separator" x1={plotLeft} x2={plotRight} y1={priceHeight} y2={priceHeight} />
       <g className="volume-bars">
         {visibleBars.map((bar, index) => {
           const x = xForIndex(index)
@@ -404,14 +418,11 @@ function BarsSvg({
           )
         })}
       </g>
-      <text x={padding} y={priceHeight + volumeHeight - 8}>
-        {latest ? `${formatCurrency(latest.close, locale)} close` : ''}
-      </text>
-      <text className="volume-axis-label" x={padding} y={priceHeight + 18}>
+      <text className="volume-axis-label" x={plotLeft} y={priceHeight + 18}>
         VOL
       </text>
       <g className="time-axis">
-        <line x1={padding} x2={width - padding} y1={priceHeight + volumeHeight + 1} y2={priceHeight + volumeHeight + 1} />
+        <line x1={plotLeft} x2={plotRight} y1={priceHeight + volumeHeight + 1} y2={priceHeight + volumeHeight + 1} />
         {timeTicks.map((tick) => (
           <g key={`${tick.index}-${tick.time}`}>
             <line x1={tick.x} x2={tick.x} y1={priceHeight + volumeHeight + 1} y2={priceHeight + volumeHeight + 7} />
@@ -427,7 +438,7 @@ function BarsSvg({
           closeY={hoveredCloseY}
           locale={locale}
           marketTimezone={marketTimezone}
-          maxX={width}
+          maxX={plotRight}
           priceHeight={priceHeight}
           x={hoveredX}
         />
@@ -444,10 +455,19 @@ function buildTimeTicks(bars: BarItem[], xForIndex: (index: number) => number) {
   if (!bars.length) {
     return []
   }
+  const minTickSpacing = 72
   const targetIndexes = [0, 0.25, 0.5, 0.75, 1].map((ratio) =>
     Math.round((bars.length - 1) * ratio),
   )
-  const indexes = [...new Set(targetIndexes)].filter((index) => bars[index])
+  const indexes = [...new Set(targetIndexes)]
+    .filter((index) => bars[index])
+    .reduce<number[]>((visibleIndexes, index) => {
+      const previousIndex = visibleIndexes.at(-1)
+      if (previousIndex !== undefined && xForIndex(index) - xForIndex(previousIndex) < minTickSpacing) {
+        return visibleIndexes
+      }
+      return [...visibleIndexes, index]
+    }, [])
   return indexes.map((index, position) => ({
     anchor: getTimeTickAnchor(position, indexes.length),
     index,
@@ -477,6 +497,22 @@ function formatAxisTime(time: string, locale: string, marketTimezone: string, ba
   return new Intl.DateTimeFormat(locale, options).format(new Date(time))
 }
 
+function buildPriceTicks(minPrice: number, maxPrice: number, count: number) {
+  if (count <= 1) {
+    return [maxPrice]
+  }
+  const span = Math.max(maxPrice - minPrice, 0.01)
+  return Array.from({ length: count }, (_, index) => maxPrice - (span * index) / (count - 1))
+}
+
+function formatAxisPrice(price: number, locale: string) {
+  const decimals = Math.abs(price) >= 1000 ? 0 : 2
+  return new Intl.NumberFormat(locale, {
+    maximumFractionDigits: decimals,
+    minimumFractionDigits: decimals,
+  }).format(price)
+}
+
 function HoverDetails({
   bar,
   closeY,
@@ -501,7 +537,7 @@ function HoverDetails({
   return (
     <g className="hover-layer">
       <line className="crosshair-line" x1={x} x2={x} y1={28} y2={priceHeight + 100} />
-      <line className="crosshair-line" x1={28} x2={maxX - 28} y1={closeY} y2={closeY} />
+      <line className="crosshair-line" x1={28} x2={maxX} y1={closeY} y2={closeY} />
       <circle className="crosshair-dot" cx={x} cy={closeY} r={4} />
       <g className="ohlc-tooltip" transform={`translate(${tooltipX} ${tooltipY})`}>
         <rect height={tooltipHeight} rx={6} width={tooltipWidth} />

@@ -816,6 +816,16 @@ p {
   stroke: rgba(255, 255, 255, 0.08);
 }
 
+.price-axis line {
+  stroke: rgba(255, 255, 255, 0.1);
+  vector-effect: non-scaling-stroke;
+}
+
+.price-axis text {
+  fill: var(--faint);
+  font-size: 12px;
+}
+
 .candle .wick {
   stroke-width: 1.4;
   vector-effect: non-scaling-stroke;
