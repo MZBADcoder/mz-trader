@@ -21,6 +21,7 @@ dependencies = [
   "massive>=2.2,<3",
   "websockets",
   "exchange-calendars>=4,<5",
+  "seqlog (>=0.4.3,<0.5)",
 ]
 
 [project.optional-dependencies]

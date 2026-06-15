@@ -256,10 +256,10 @@ files = [
 name = "charset-normalizer"
 version = "3.4.7"
 description = "The Real First Universal Charset Detector. Open, modern and actively maintained alternative to Chardet."
-optional = true
+optional = false
 python-versions = ">=3.7"
 groups = ["main"]
-markers = "(sys_platform == \"win32\" or sys_platform == \"emscripten\" or sys_platform != \"win32\" and sys_platform != \"emscripten\") and extra == \"dev\""
+markers = "sys_platform == \"win32\" or sys_platform == \"emscripten\" or sys_platform != \"win32\" and sys_platform != \"emscripten\""
 files = [
     {file = "charset_normalizer-3.4.7-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:cdd68a1fb318e290a2077696b7eb7a21a49163c455979c639bf5a5dcdc46617d"},
     {file = "charset_normalizer-3.4.7-cp310-cp310-manylinux2014_aarch64.manylinux_2_17_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:e17b8d5d6a8c47c85e68ca8379def1303fd360c3e22093a807cd34a71cd082b8"},
@@ -1619,10 +1619,10 @@ xxhash = ["xxhash (>=3.6.0,<3.7.0)"]
 name = "requests"
 version = "2.33.1"
 description = "Python HTTP for Humans."
-optional = true
+optional = false
 python-versions = ">=3.10"
 groups = ["main"]
-markers = "(sys_platform == \"win32\" or sys_platform == \"emscripten\" or sys_platform != \"win32\" and sys_platform != \"emscripten\") and extra == \"dev\""
+markers = "sys_platform == \"win32\" or sys_platform == \"emscripten\" or sys_platform != \"win32\" and sys_platform != \"emscripten\""
 files = [
     {file = "requests-2.33.1-py3-none-any.whl", hash = "sha256:4e6d1ef462f3626a1f0a0a9c42dd93c63bad33f9f1c1937509b8c5c8718ab56a"},
     {file = "requests-2.33.1.tar.gz", hash = "sha256:18817f8c57c6263968bc123d237e3b8b08ac046f5456bd1e307ee8f4250d3517"},
@@ -1666,6 +1666,24 @@ files = [
     {file = "ruff-0.15.7-py3-none-win_arm64.whl", hash = "sha256:18e8d73f1c3fdf27931497972250340f92e8c861722161a9caeb89a58ead6ed2"},
     {file = "ruff-0.15.7.tar.gz", hash = "sha256:04f1ae61fc20fe0b148617c324d9d009b5f63412c0b16474f3d5f1a1a665f7ac"},
 ]
+
+[[package]]
+name = "seqlog"
+version = "0.4.3"
+description = "SeqLog enables logging from Python to Seq."
+optional = false
+python-versions = "*"
+groups = ["main"]
+markers = "sys_platform == \"win32\" or sys_platform == \"emscripten\" or sys_platform != \"win32\" and sys_platform != \"emscripten\""
+files = [
+    {file = "seqlog-0.4.3-py2.py3-none-any.whl", hash = "sha256:789ab07c7512965b57019f8bb80d6e4f8782475ce3dfb5a25cb0e462fb72afc2"},
+    {file = "seqlog-0.4.3.tar.gz", hash = "sha256:d53341e1ac24211d4f715fd824e2e5b38378709d90363f85f65a63de166c7c0e"},
+]
+
+[package.dependencies]
+python_dateutil = ">=2.5.3"
+PyYAML = ">=3.11"
+requests = ">=2.10.0"
 
 [[package]]
 name = "six"
@@ -2375,4 +2393,4 @@ dev = ["httpx", "pytest", "ruff", "testcontainers"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<4.0"
-content-hash = "b5af2c38570204c2fb2b589b95611b10af3025e2e26c8407178dc2b2668bd822"
+content-hash = "a9d4b95bde424289903c65dc95f48323c0713480ae4c8fbf36ce3bee7a798cf3"

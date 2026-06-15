@@ -59,6 +59,11 @@ class Settings(BaseSettings):
     celery_log_file_name: str = "celery.log"
     log_backup_count: int = 14
     log_to_stdout: bool = True
+    seq_url: str | None = None
+    seq_api_key: str | None = None
+    seq_batch_size: int = 10
+    seq_auto_flush_timeout_seconds: float = 1.0
+    seq_ignore_submission_errors: bool = True
     request_id_header: str = "X-Request-ID"
     cors_allowed_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
     cors_allow_credentials: bool = True

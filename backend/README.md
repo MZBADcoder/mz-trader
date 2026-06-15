@@ -48,6 +48,16 @@ var/log/celery-worker.log
 var/log/celery-beat.log
 ```
 
+Local Seq log search:
+
+```bash
+SEQ_URL=http://localhost:5341
+LOG_TO_STDOUT=false
+```
+
+When `SEQ_URL` is set, FastAPI and Celery logs are sent to Seq in addition to the daily rotating JSON log files. Keep the file handler enabled as a local fallback when Seq is stopped or unreachable.
+Seq submission errors are ignored by default so local development can continue if Seq is temporarily offline.
+
 Useful overrides:
 
 ```bash

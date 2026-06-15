@@ -9,6 +9,9 @@ from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 from typing import Any
 
+from seqlog.feature_flags import FeatureFlag, configure_feature
+from seqlog.structured_logging import SeqLogHandler
+
 from bootstrap.request_context import get_request_context
 from settings import Settings
 
@@ -26,6 +29,36 @@ _CONTEXT_FIELDS = (
 )
 
 _BASE_RECORD_FIELDS = frozenset(logging.makeLogRecord({}).__dict__)
+_INTERNAL_RECORD_FIELDS = frozenset({"log_props"})
+_SEQ_RECORD_PROPERTIES_ATTR = "_seq_log_properties"
+
+
+def _collect_context_fields(record: logging.LogRecord) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    context = get_request_context()
+
+    for field in _CONTEXT_FIELDS:
+        value = getattr(record, field, None)
+        if value is None:
+            value = getattr(context, field)
+        if value is not None:
+            payload[field] = value
+
+    return payload
+
+
+def _collect_extra_fields(record: logging.LogRecord) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+
+    for key, value in record.__dict__.items():
+        if key in _BASE_RECORD_FIELDS or key in _CONTEXT_FIELDS or key in _INTERNAL_RECORD_FIELDS:
+            continue
+        if key.startswith("_"):
+            continue
+        if value is not None:
+            payload[key] = value
+
+    return payload
 
 
 class JsonLogFormatter(logging.Formatter):
@@ -39,24 +72,39 @@ class JsonLogFormatter(logging.Formatter):
             "message": record.getMessage(),
         }
 
-        context = get_request_context()
-        for field in _CONTEXT_FIELDS:
-            value = getattr(record, field, None)
-            if value is None:
-                value = getattr(context, field)
-            if value is not None:
-                payload[field] = value
-
-        for key, value in record.__dict__.items():
-            if key in _BASE_RECORD_FIELDS or key in _CONTEXT_FIELDS or key.startswith("_"):
-                continue
-            if value is not None:
-                payload[key] = value
+        payload.update(_collect_context_fields(record))
+        payload.update(_collect_extra_fields(record))
 
         if record.exc_info:
             payload["exc_info"] = self.formatException(record.exc_info)
 
         return json.dumps(payload, ensure_ascii=True, default=str)
+
+
+class ContextSeqLogHandler(SeqLogHandler):
+    """Send standard logging records to Seq with project context fields."""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        setattr(
+            record,
+            _SEQ_RECORD_PROPERTIES_ATTR,
+            {
+                **_collect_context_fields(record),
+                **_collect_extra_fields(record),
+            },
+        )
+        super().emit(record)
+
+    def _build_event_data_ingest(self, record: logging.LogRecord) -> dict[str, Any]:
+        event_data = super()._build_event_data_ingest(record)
+        properties = event_data.setdefault("Properties", {})
+        properties.update(getattr(record, _SEQ_RECORD_PROPERTIES_ATTR, {}))
+        return event_data
+
+    def _build_event_data_clef(self, record: logging.LogRecord) -> dict[str, Any]:
+        event_data = super()._build_event_data_clef(record)
+        event_data.update(getattr(record, _SEQ_RECORD_PROPERTIES_ATTR, {}))
+        return event_data
 
 
 def _build_file_handler(log_path: Path, backup_count: int) -> TimedRotatingFileHandler:
@@ -75,6 +123,20 @@ def _build_file_handler(log_path: Path, backup_count: int) -> TimedRotatingFileH
 def _build_stream_handler() -> logging.StreamHandler:
     handler = logging.StreamHandler()
     handler.setFormatter(JsonLogFormatter())
+    return handler
+
+
+def _build_seq_handler(settings: Settings) -> ContextSeqLogHandler | None:
+    if not settings.seq_url:
+        return None
+
+    configure_feature(FeatureFlag.IGNORE_SEQ_SUBMISSION_ERRORS, settings.seq_ignore_submission_errors)
+    handler = ContextSeqLogHandler(
+        server_url=settings.seq_url,
+        api_key=settings.seq_api_key or None,
+        batch_size=settings.seq_batch_size,
+        auto_flush_timeout=settings.seq_auto_flush_timeout_seconds,
+    )
     return handler
 
 
@@ -100,6 +162,10 @@ def configure_logging(
 
     root_logger.setLevel(log_level if log_level is not None else settings.log_level.upper())
     root_logger.addHandler(_build_file_handler(log_path, settings.log_backup_count))
+
+    seq_handler = _build_seq_handler(settings)
+    if seq_handler is not None:
+        root_logger.addHandler(seq_handler)
 
     if settings.log_to_stdout:
         root_logger.addHandler(_build_stream_handler())
