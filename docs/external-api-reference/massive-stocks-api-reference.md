@@ -1,28 +1,46 @@
 # Massive Stocks API Reference
 
-Last verified: 2026-03-08
+Last verified: 2026-06-02
 
-## Purpose
+## Overview
 
-This document is the stock data integration reference for this repository.
+This document is the stock data integration reference for this repository after
+the account downgrade to **Massive Stocks Starter ($29/mo)**.
 
-It is intended to:
+The practical backend stance is:
 
-- provide one official reference baseline before implementation starts
-- cover the Massive stocks REST and WebSocket surfaces from the official docs, not only what the legacy project happened to call
-- document permission expectations only for the plans we care about: `Stocks Developer` and `Stocks Advanced`
-- give backend and frontend a shared capability model for environment-based feature gating
+- Treat Stocks Starter market data as **15-minute delayed**.
+- Keep REST snapshots and aggregate bars as the MVP data foundation.
+- Do not build against REST/WS trades or REST/WS quotes while the project runs on
+  Stocks Starter.
+- Keep plan capability resolution centralized in backend configuration and expose
+  the resolved capabilities to frontend.
+
+```mermaid
+flowchart LR
+  Frontend["Frontend"]
+  Backend["Backend API"]
+  Redis["Redis snapshot cache"]
+  Postgres["PostgreSQL bars store"]
+  Massive["Massive Stocks Starter"]
+
+  Frontend --> Backend
+  Backend --> Redis
+  Backend --> Postgres
+  Backend -.background refresh.-> Massive
+  Massive -->|"15-minute delayed snapshots"| Redis
+  Massive -->|"15-minute delayed aggregate bars"| Postgres
+```
 
 ## Source Policy
 
 This document is based on:
 
-- Massive official documentation
-- Massive official pricing information
-- the official Python package version imported by the legacy project
+- Massive official documentation.
+- Massive official pricing and plan labels shown in the interactive docs.
+- The official Python package version imported by the legacy project.
 
 This document is not limited by the legacy application's actual call paths.
-
 Legacy is used here only for SDK baseline and compatibility context:
 
 - package name: `massive`
@@ -33,8 +51,8 @@ Legacy is used here only for SDK baseline and compatibility context:
 
 ## Official Sources
 
-- REST stocks index: [Massive REST docs](https://massive.com/docs/rest/llms.txt)
-- WebSocket stocks index: [Massive WebSocket docs](https://massive.com/docs/websocket/llms.txt)
+- REST stocks overview: [Massive REST stocks docs](https://massive.com/docs/rest/stocks/overview)
+- WebSocket stocks overview: [Massive WebSocket stocks docs](https://massive.com/docs/websocket/stocks/overview?assetClass=stocks&license=personal&name=stocks_starter)
 - Pricing: [Massive Stocks pricing](https://massive.com/pricing?product=stocks)
 
 Key endpoint docs referenced while writing this file:
@@ -42,43 +60,47 @@ Key endpoint docs referenced while writing this file:
 - [Stocks Custom Bars](https://massive.com/docs/rest/stocks/aggregates/custom-bars)
 - [Stocks Full Market Snapshot](https://massive.com/docs/rest/stocks/snapshots/full-market-snapshot)
 - [Stocks Single Ticker Snapshot](https://massive.com/docs/rest/stocks/snapshots/single-ticker-snapshot)
-- [Stocks Market Holidays](https://massive.com/docs/rest/stocks/market-operations/market-holidays)
-- [Stocks Market Status](https://massive.com/docs/rest/stocks/market-operations/market-status)
 - [Stocks Last Quote](https://massive.com/docs/rest/stocks/trades-quotes/last-quote)
 - [Stocks Last Trade](https://massive.com/docs/rest/stocks/trades-quotes/last-trade)
 - [Stocks Quotes](https://massive.com/docs/rest/stocks/trades-quotes/quotes)
 - [Stocks Trades](https://massive.com/docs/rest/stocks/trades-quotes/trades)
-- [WS Quotes](https://massive.com/docs/websocket/stocks/quotes)
-- [WS Trades](https://massive.com/docs/websocket/stocks/trades)
 - [WS Aggregates Per Minute](https://massive.com/docs/websocket/stocks/aggregates-per-minute)
 - [WS Aggregates Per Second](https://massive.com/docs/websocket/stocks/aggregates-per-second)
-- [WS Fair Market Value](https://massive.com/docs/websocket/stocks/fair-market-value)
-- [WS NOI](https://massive.com/docs/websocket/stocks/imbalances)
-- [WS LULD](https://massive.com/docs/websocket/stocks/luld)
+- [WS Quotes](https://massive.com/docs/websocket/stocks/quotes)
+- [WS Trades](https://massive.com/docs/websocket/stocks/trades)
 
 ## Plan Scope
 
-Only these two stock plans matter for this repository:
+The current target plan is:
+
+- `starter`
+
+Upgrade comparison plans kept in this document only for implementation gating:
 
 - `developer`
 - `advanced`
 
-Everything else is intentionally out of scope.
+Everything else is out of scope unless a future task explicitly adds an
+entitlement or add-on.
 
 ## Recommended Environment Variables
 
-These are project conventions:
+Project conventions:
 
 - `MASSIVE_API_KEY`
-- `MASSIVE_STOCK_PLAN=developer|advanced`
+- `MASSIVE_STOCK_PLAN=starter|developer|advanced`
+- `MARKET_DATA_DELAY_MINUTES=15` for `starter` and `developer`
+- `MARKET_DATA_SUPPORTS_STREAM=true|false`
 
 Recommended derived flags:
 
 - `massive_has_realtime`
-- `massive_has_quotes`
-- `massive_has_trades`
 - `massive_has_snapshots`
-- `massive_has_second_aggs`
+- `massive_has_rest_quotes`
+- `massive_has_rest_trades`
+- `massive_has_rest_last_quote`
+- `massive_has_rest_last_trade`
+- `massive_has_rest_aggregate_bars`
 - `massive_has_ws_quotes`
 - `massive_has_ws_trades`
 - `massive_has_ws_minute_aggs`
@@ -86,123 +108,143 @@ Recommended derived flags:
 
 Recommended defaults:
 
-| Plan | snapshots | quotes | trades | second aggs | ws minute aggs | ws second aggs | ws trades | ws quotes | latency |
+| Plan | latency | snapshots | aggregate bars | REST trades | REST quotes | WS minute aggs | WS second aggs | WS trades | WS quotes |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| developer | yes | no | yes | yes | yes | yes | yes | no | 15-minute delayed |
-| advanced | yes | yes | yes | yes | yes | yes | yes | yes | real-time |
+| starter | 15-minute delayed | yes | yes, 5-year history | no | no | yes | yes | no | no |
+| developer | 15-minute delayed | yes | yes, 10-year history | yes | no | yes | yes | yes | no |
+| advanced | real-time | yes | yes, all history | yes | yes | yes | yes | yes | yes |
 
 Basis:
 
-- from the official stocks pricing page feature grid
-- from snapshot docs saying quote and trade sections appear only if the plan includes them
+- Custom Bars docs show Starter as 15-minute delayed with 5 years of history.
+- Snapshot docs show Starter as 15-minute delayed.
+- REST trades and last trade docs show Starter as not included.
+- REST quotes and last quote docs show Starter as not included.
+- WebSocket aggregate docs show Starter as 15-minute delayed.
+- WebSocket trades and quotes docs show Starter as not included.
 
-## Plan Permission Summary
+## Starter Permission Summary
 
-This section captures only what is relevant to `developer` and `advanced`.
+### Clearly Included On Starter
 
-### Clearly Included In Both Developer And Advanced
+- REST aggregate bars:
+  - `GET /v2/aggs/ticker/{stocksTicker}/range/{multiplier}/{timespan}/{from}/{to}`
+  - 15-minute delayed
+  - 5 years of history
+- REST snapshots:
+  - `GET /v2/snapshot/locale/us/markets/stocks/tickers`
+  - `GET /v2/snapshot/locale/us/markets/stocks/tickers/{stocksTicker}`
+  - 15-minute delayed
+- REST reference-data style endpoints listed as included in all Stocks plans:
+  - tickers
+  - ticker overview
+  - ticker types
+  - exchanges
+  - condition codes
+  - market status
+  - market holidays
+- REST corporate actions and technical indicators that official docs list as
+  included in all Stocks plans.
+- WebSocket aggregate feeds:
+  - `WS /stocks/AM`
+  - `WS /stocks/A`
+  - 15-minute delayed
 
-- REST aggregate bars
-- REST snapshots
-- REST trades
-- REST last trade
-- REST market status
-- REST market holidays
-- REST reference-data style endpoints such as tickers, exchanges, condition codes
-- WebSocket minute aggregates
-- WebSocket second aggregates
-- WebSocket trades
+### Not Included On Starter
 
-### Advanced Only
-
-- REST quote-bearing snapshot fields
-- REST last quote
-- REST historical quotes
-- WebSocket quotes
-- real-time stock feed instead of 15-minute delayed stock feed
-- financials and ratios, according to the pricing page feature grid
+- REST trades:
+  - `GET /v3/trades/{stockTicker}`
+- REST last trade:
+  - `GET /v2/last/trade/{stocksTicker}`
+- REST quotes:
+  - `GET /v3/quotes/{stockTicker}`
+- REST last quote:
+  - `GET /v2/last/nbbo/{stocksTicker}`
+- WebSocket trades:
+  - `WS /stocks/T`
+- WebSocket quotes:
+  - `WS /stocks/Q`
+- Real-time stock feed.
 
 ### Requires Separate Verification Or Separate Entitlement
 
-- WebSocket FMV
-  - official doc says Business plan only
-- WebSocket NOI
-  - pricing page exposes a separate NYSE Order Imbalances product
-- WebSocket LULD
-  - stock docs exist, but the public pricing grid does not clearly map this feed to Developer or Advanced
-- filings endpoints
-  - official docs exist, but public pricing grid does not clearly map them to Developer or Advanced
-- news endpoint
-  - official docs exist, but public pricing grid does not clearly map it to Developer or Advanced
+- WebSocket FMV:
+  - official docs describe it as Business plan only.
+- WebSocket NOI:
+  - likely separate entitlement based on the NYSE order imbalance product.
+- WebSocket LULD:
+  - public docs exist, but entitlement should be verified before use.
+- Financials and ratios:
+  - official docs show a separate Financials & Ratios Expansion alongside stock
+    plans in several places.
+- Filings and news:
+  - official docs exist, but this repository should verify current access before
+    depending on them.
 
 ## Stocks REST Catalog
 
-The list below follows the official Massive REST stocks index. The `Permission` column is intentionally conservative:
+The list below follows the official Massive REST stocks catalog. The
+`Starter permission` column is intentionally conservative.
 
-- `Developer` means the pricing/docs combination gives a strong basis for Developer access
-- `Advanced` means clearly available but we should assume Advanced if quotes or real-time are involved
-- `Verify` means docs exist but the public pricing grid does not clearly disclose plan entitlement
-
-| Group | Endpoint / Doc | Permission | Notes |
+| Group | Endpoint / Doc | Starter permission | Notes |
 | --- | --- | --- | --- |
-| Aggregates | Custom Bars | Developer | historical OHLC range endpoint |
-| Aggregates | Daily Market Summary | Developer | daily market-wide OHLC summary |
-| Aggregates | Daily Ticker Summary | Developer | single-day ticker OHLC summary |
-| Aggregates | Previous Day Bar | Developer | previous trading day OHLC |
-| Corporate Actions | Dividends | Developer | pricing page shows corporate actions on Developer and Advanced |
-| Corporate Actions | IPOs | Verify | official docs exist; pricing grid does not explicitly list IPOs |
-| Corporate Actions | Splits | Developer | pricing page shows corporate actions on Developer and Advanced |
-| Corporate Actions | Ticker Events | Verify | official docs exist; pricing grid does not explicitly list ticker events |
-| Filings | 10-K Sections | Verify | official docs exist; entitlement not explicit in pricing grid |
-| Filings | 8-K Text | Verify | official docs exist; entitlement not explicit in pricing grid |
-| Filings | SEC EDGAR Index | Verify | official docs exist; entitlement not explicit in pricing grid |
-| Filings | Risk Categories | Verify | official docs exist; entitlement not explicit in pricing grid |
-| Filings | Risk Factors | Verify | official docs exist; entitlement not explicit in pricing grid |
-| Fundamentals | Balance Sheets | Advanced | pricing page explicitly mentions financials and ratios on Advanced |
-| Fundamentals | Cash Flow Statements | Advanced | same basis as above |
-| Fundamentals | Float | Verify | docs exist; not explicit in pricing grid |
-| Fundamentals | Income Statements | Advanced | same basis as above |
-| Fundamentals | Ratios | Advanced | pricing page explicitly mentions financials and ratios on Advanced |
-| Fundamentals | Short Interest | Verify | docs exist; not explicit in pricing grid |
-| Fundamentals | Short Volume | Verify | docs exist; not explicit in pricing grid |
-| Market Operations | Condition Codes | Developer | fits reference-data capability |
-| Market Operations | Exchanges | Developer | fits reference-data capability |
-| Market Operations | Market Holidays | Developer | used as reference-data style endpoint |
-| Market Operations | Market Status | Developer | used as reference-data style endpoint |
-| News | News | Verify | docs exist; pricing grid does not explicitly map it |
-| Snapshots | Full Market Snapshot | Developer | endpoint available at Starter+, therefore available for both target plans |
-| Snapshots | Single Ticker Snapshot | Developer | same as above |
-| Snapshots | Top Market Movers | Developer | snapshot family endpoint |
-| Snapshots | Unified Snapshot | Verify | multi-asset endpoint; pricing mapping not explicit |
-| Technical Indicators | EMA | Developer | pricing page lists technical indicators on Developer and Advanced |
-| Technical Indicators | MACD | Developer | same basis |
-| Technical Indicators | RSI | Developer | same basis |
-| Technical Indicators | SMA | Developer | same basis |
-| Tickers | All Tickers | Developer | fits reference-data capability |
-| Tickers | Related Tickers | Verify | docs exist; pricing grid does not explicitly map it |
-| Tickers | Ticker Overview | Developer | fits reference-data capability |
-| Tickers | Ticker Types | Developer | fits reference-data capability |
-| Trades/Quotes | Last Quote | Advanced | quotes are Advanced-only in public pricing |
-| Trades/Quotes | Last Trade | Developer | trades are available on Developer and Advanced |
-| Trades/Quotes | Quotes | Advanced | quotes are Advanced-only in public pricing |
-| Trades/Quotes | Trades | Developer | trades are available on Developer and Advanced |
+| Aggregates | Custom Bars | Included | 15-minute delayed; 5-year history |
+| Aggregates | Daily Market Summary | Included | official docs list all Stocks plans |
+| Aggregates | Daily Ticker Summary | Included | official docs list all Stocks plans |
+| Aggregates | Previous Day Bar | Included | official docs list all Stocks plans |
+| Corporate Actions | Dividends | Included | official docs list all Stocks plans |
+| Corporate Actions | IPOs | Included | official docs list all Stocks plans |
+| Corporate Actions | Splits | Included | official docs list all Stocks plans |
+| Corporate Actions | Ticker Events | Included | official docs list all Stocks plans; experimental |
+| Filings | 10-K / 8-K / 13-F / Risk Factors | Verify | docs currently show broad access, but verify before implementation |
+| Fundamentals | Balance Sheets / Cash Flow / Income / Ratios | Verify | may require Financials & Ratios Expansion |
+| Fundamentals | Float / Short Interest / Short Volume | Verify | verify before product dependency |
+| Market Operations | Condition Codes | Included | reference-data style endpoint |
+| Market Operations | Exchanges | Included | reference-data style endpoint |
+| Market Operations | Market Holidays | Included | reference-data style endpoint |
+| Market Operations | Market Status | Included | reference-data style endpoint |
+| News | News | Verify | verify before implementation |
+| Snapshots | Full Market Snapshot | Included | 15-minute delayed |
+| Snapshots | Single Ticker Snapshot | Included | 15-minute delayed |
+| Snapshots | Top Market Movers | Included | snapshot family endpoint |
+| Snapshots | Unified Snapshot | Verify | multi-asset endpoint; verify stock-only use |
+| Technical Indicators | EMA / MACD / RSI / SMA | Included | official docs list all Stocks plans |
+| Tickers | All Tickers | Included | reference-data style endpoint |
+| Tickers | Related Tickers | Included | official docs list all Stocks plans |
+| Tickers | Ticker Overview | Included | reference-data style endpoint |
+| Tickers | Ticker Types | Included | reference-data style endpoint |
+| Trades/Quotes | Last Quote | Not included | Advanced only in current docs |
+| Trades/Quotes | Last Trade | Not included | Developer+ in current docs |
+| Trades/Quotes | Quotes | Not included | Advanced only in current docs |
+| Trades/Quotes | Trades | Not included | Developer+ in current docs |
 
 ## REST Endpoints Most Likely To Matter First
 
-Even though this document covers the full official stocks catalog, the following endpoints are the most likely first implementation targets for trading UI and market data services:
-
-### Market Data Core
+### Starter-Safe Market Data Core
 
 - `GET /v2/aggs/ticker/{stocksTicker}/range/{multiplier}/{timespan}/{from}/{to}`
 - `GET /v2/snapshot/locale/us/markets/stocks/tickers`
 - `GET /v2/snapshot/locale/us/markets/stocks/tickers/{stocksTicker}`
+
+Implementation implications:
+
+- The backend can continue using snapshots + aggregate bars for MVP.
+- The backend must not require `lastTrade` to compute a usable snapshot.
+- `delay_minutes` must be `15`.
+- `is_realtime` must be `false`.
+
+### Not Starter-Safe
+
 - `GET /v2/last/trade/{stocksTicker}`
 - `GET /v3/trades/{stockTicker}`
-
-### Quote-Specific, Advanced Only
-
 - `GET /v2/last/nbbo/{stocksTicker}`
 - `GET /v3/quotes/{stockTicker}`
+
+Implementation implications:
+
+- Do not call these endpoints unless `MASSIVE_STOCK_PLAN` is upgraded and the
+  backend capability resolver says they are available.
+- Do not make snapshot mapping depend on nested trade or quote sections.
 
 ### Market Calendar And State
 
@@ -214,43 +256,46 @@ Even though this document covers the full official stocks catalog, the following
 - `GET /v3/reference/tickers`
   - supports exact ticker lookup
   - supports `search` against ticker and/or company name
-  - can be used for:
-    - validating whether a ticker exists before adding it to a watchlist
-    - powering frontend autocomplete such as `apple` -> `AAPL`
-  - project guidance:
-    - set `market=stocks`
-    - prefer `active=true` for MVP watchlist flows
-    - normalize the Massive response in backend instead of exposing it directly to frontend
+  - should set `market=stocks`
+  - should prefer `active=true` for MVP watchlist flows
+  - should be normalized in backend instead of exposed directly to frontend
 
 ## Stocks WebSocket Catalog
 
 Official stocks WebSocket feeds currently listed in the public docs:
 
-| Feed | Endpoint | Permission | Notes |
+| Feed | Endpoint | Starter permission | Notes |
 | --- | --- | --- | --- |
-| Aggregates Per Minute | `WS /stocks/AM` | Developer | available because websocket minute aggregates exist on Developer |
-| Aggregates Per Second | `WS /stocks/A` | Developer | available because websocket second aggregates exist on Developer |
-| Fair Market Value | `WS /business/stocks/FMV` | Verify | official doc says Business plan users |
-| Net Order Imbalance | `WS /stocks/NOI` | Verify | likely separate entitlement based on pricing page NOI product |
-| Limit Up - Limit Down | `WS /stocks/LULD` | Verify | public pricing grid does not clearly map entitlement |
-| Quotes | `WS /stocks/Q` | Advanced | quotes are Advanced-only in public pricing |
-| Trades | `WS /stocks/T` | Developer | trades are available on Developer and Advanced |
+| Aggregates Per Minute | `WS /stocks/AM` | Included | 15-minute delayed |
+| Aggregates Per Second | `WS /stocks/A` | Included | 15-minute delayed |
+| Fair Market Value | `WS /business/stocks/FMV` | Verify | official docs describe Business plan access |
+| Net Order Imbalance | `WS /stocks/NOI` | Verify | likely separate entitlement |
+| Limit Up - Limit Down | `WS /stocks/LULD` | Verify | verify before use |
+| Quotes | `WS /stocks/Q` | Not included | Advanced only in current docs |
+| Trades | `WS /stocks/T` | Not included | Developer+ in current docs |
 
 ## WebSocket Feeds Most Likely To Matter First
 
-### Developer And Advanced Shared
+### Starter-Safe
 
 - `WS /stocks/A`
 - `WS /stocks/AM`
+
+### Not Starter-Safe
+
 - `WS /stocks/T`
-
-### Advanced Only
-
 - `WS /stocks/Q`
+
+Project guidance:
+
+- Keep `MARKET_DATA_SUPPORTS_STREAM=false` unless backend explicitly implements
+  delayed aggregate fanout from `WS /stocks/A` or `WS /stocks/AM`.
+- Frontend must not assume a trade or quote event stream exists on Starter.
 
 ## Snapshot Field-Level Plan Behavior
 
-The snapshot docs explicitly state that some nested fields are conditional on plan entitlements.
+The snapshot docs explicitly state that nested `lastTrade` and `lastQuote`
+sections are returned only if the current plan includes those capabilities.
 
 ### Full Market Snapshot
 
@@ -258,13 +303,17 @@ The snapshot docs explicitly state that some nested fields are conditional on pl
 
 Field behavior:
 
-- `tickers[].lastTrade` appears only if the current plan includes trades
-- `tickers[].lastQuote` appears only if the current plan includes quotes
+- `tickers[].lastTrade` appears only if the current plan includes trades.
+- `tickers[].lastQuote` appears only if the current plan includes quotes.
+- `tickers[].fmv` is Business-plan oriented and must be treated as optional.
 
-Project implication:
+Project implication on Starter:
 
-- on `developer`, snapshot responses should be expected to contain `lastTrade` but not `lastQuote`
-- on `advanced`, both can be expected
+- `lastTrade` must be treated as optional and usually absent.
+- `lastQuote` must be treated as optional and usually absent.
+- Snapshot price should prefer provider-level `last` or aggregate fields such as
+  `min.c` / `day.c` when trade fields are absent.
+- `last_trade_at` can be `null`; session and staleness logic must tolerate it.
 
 ### Single Ticker Snapshot
 
@@ -272,30 +321,37 @@ Project implication:
 
 Field behavior:
 
-- `ticker.lastTrade` appears only if the current plan includes trades
-- `ticker.lastQuote` appears only if the current plan includes quotes
+- `ticker.lastTrade` appears only if the current plan includes trades.
+- `ticker.lastQuote` appears only if the current plan includes quotes.
 
-Project implication:
+Project implication on Starter:
 
-- treat quote sections as optional unless `MASSIVE_STOCK_PLAN=advanced`
+- Treat all trade and quote sections as optional.
+- Do not use missing trade/quote sections as a reason to mark the entire snapshot
+  unresolved if aggregate/day fields are sufficient.
 
-## Connection Notes For Stocks WebSocket
+## Current Repository Impact
 
-Official stock feeds live under:
+### Backend Features Expected To Continue Working On Starter
 
-- `wss://socket.massive.com/stocks`
+- Ticker search and watchlist ticker validation via `GET /v3/reference/tickers`.
+- Snapshot polling based on the full-market snapshot endpoint, provided the
+  mapper tolerates missing `lastTrade`.
+- Historical and current-day bars ingestion via custom aggregate bars, with
+  15-minute delayed data and 5-year history limits.
+- Frontend-facing capability response for `delay_minutes=15` and
+  `is_realtime=false`.
 
-Important event codes from the official docs:
+### Backend Features At Risk On Starter
 
-- `A` second aggregate
-- `AM` minute aggregate
-- `T` trade
-- `Q` quote
-- `NOI` net order imbalance
-- `LULD` limit up / limit down
-- `FMV` fair market value on business feed
-
-The public markdown export for the WebSocket quickstart is sparse, so the exact auth and subscribe payloads should be verified during implementation against a live sandbox or the latest interactive docs.
+| Priority | Area | Risk | Required change |
+| --- | --- | --- | --- |
+| P1 | Snapshot mapping | Current code already falls back from missing `lastTrade` to `last`, `min.c`, then `day.c`, but there is no Starter-specific no-`lastTrade` regression test. It also still requires complete day/change fields. | Add a Starter fixture with no `lastTrade` / no `lastQuote`; verify early-session nullability against the live account. |
+| P1 | Capability modeling | Current backend exposes only `delay_minutes`, `is_realtime`, and `supports_stream`; it does not expose quote/trade capability flags. | Add explicit `has_trades`, `has_quotes`, and aggregate-stream flags before frontend depends on them. |
+| P1 | Settings | `massive_stock_plan` defaults to `developer` but capability behavior is driven by `market_data_delay_minutes`. | Align defaults/documentation to `starter`, or add a resolver from plan to capabilities. |
+| P1 | Bars retention | Starter aggregate bars history is 5 years, but current backend retention constants keep 10 years of `1d` bars. | Clamp bootstrap/reconciliation windows to 5 years when `starter`. |
+| P2 | Future streaming | Starter supports delayed aggregate WS feeds but not trade/quote WS feeds. | Keep stream disabled until backend implements aggregate-only delayed fanout. |
+| P2 | Docs and PRD wording | Existing PRD says MVP uses Developer/Advanced shared capability. | Update wording if Starter becomes the project baseline. |
 
 ## SDK Baseline
 
@@ -306,24 +362,35 @@ The official Python package baseline imported by the legacy project is:
 
 Project guidance:
 
-- use this as the first compatibility target when building the new integration layer
-- do not assume the new repository must preserve the legacy wrapper API
-- prefer a new adapter layer that maps the official SDK and official HTTP/WebSocket docs into this repository's own domain model
+- use this as the first compatibility target when building the integration layer
+- do not assume this repository must preserve the legacy wrapper API
+- prefer backend-owned adapters that map official HTTP/WebSocket docs into this
+  repository's domain model
 
 ## Implementation Rules For This Repository
 
-- gate every quote-dependent feature behind `MASSIVE_STOCK_PLAN=advanced`
-- allow trade and aggregate features on both `developer` and `advanced`
-- treat all `developer` market data as delayed
-- treat `advanced` as real-time capable
-- keep plan capability resolution centralized in one backend module
-- expose the resolved capabilities to the frontend rather than recomputing them in multiple places
-- do not make undocumented assumptions about FMV, NOI, LULD, filings, or news entitlements
+- Gate every trade-dependent feature behind `massive_has_rest_trades` or
+  `massive_has_ws_trades`.
+- Gate every quote-dependent feature behind `massive_has_rest_quotes` or
+  `massive_has_ws_quotes`.
+- Allow snapshot and aggregate-bar features on `starter`, `developer`, and
+  `advanced`.
+- Treat `starter` and `developer` as delayed modes.
+- Treat `advanced` as real-time capable.
+- Keep plan capability resolution centralized in backend configuration.
+- Expose resolved capabilities to frontend rather than recomputing them in
+  multiple places.
+- Do not make undocumented assumptions about FMV, NOI, LULD, filings, financials,
+  ratios, or news entitlements.
 
 ## Open Verification Items
 
-- exact entitlement for filings endpoints under public self-serve stock plans
-- exact entitlement for the stock news endpoint
-- whether `LULD` is bundled in Developer, Advanced, or a separate add-on
-- current WebSocket auth and subscription payload shape in the live platform docs
-- whether the `massive` Python SDK exposes all stock surfaces needed directly, or whether some endpoints should be called over raw HTTP instead of SDK convenience methods
+- Whether the live account can access all "included in all Stocks plans" filing
+  endpoints without an expansion add-on.
+- Whether financials and ratios require the separate Financials & Ratios
+  Expansion for this account.
+- Whether `LULD` is bundled in Starter, Advanced, or a separate entitlement.
+- Current WebSocket auth and subscription payload shape in the live platform docs.
+- Whether the `massive` Python SDK exposes all required stock surfaces directly,
+  or whether some endpoints should be called over raw HTTP instead of SDK
+  convenience methods.
