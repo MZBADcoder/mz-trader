@@ -5,11 +5,22 @@ from __future__ import annotations
 import json
 import logging
 
+import pytest
 from seqlog.structured_logging import SeqLogHandler
 
 from bootstrap.logging import ContextSeqLogHandler, JsonLogFormatter, configure_logging
 from bootstrap.request_context import RequestLogContext, reset_request_context, set_request_context
 from settings import Settings
+
+
+@pytest.fixture(autouse=True)
+def cleanup_logging_handlers():
+    yield
+    root_logger = logging.getLogger()
+    handlers = list(root_logger.handlers)
+    root_logger.handlers.clear()
+    for handler in handlers:
+        handler.close()
 
 
 def test_json_log_formatter_includes_request_context() -> None:
@@ -100,6 +111,9 @@ def test_configure_logging_adds_seq_handler_when_configured(tmp_path, monkeypatc
             self.api_key = api_key
             self.batch_size = batch_size
             self.auto_flush_timeout = auto_flush_timeout
+
+        def emit(self, record: logging.LogRecord) -> None:
+            return None
 
     monkeypatch.setattr("bootstrap.logging.ContextSeqLogHandler", FakeSeqHandler)
     settings = Settings(

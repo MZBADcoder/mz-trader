@@ -147,14 +147,13 @@
   - `1D`
   - `1W`
   - `1M`
-  - `1Q`
 - `session` 在 MVP 仅支持：
   - `regular`
 - 当前阶段不查询、不持久化、不展示 `pre_market` / `after_hours` bars；snapshot 仍可展示当前市场状态。
 - bars 查询只读取数据库；数据库 miss 不在请求路径回源 Massive。
 - bars 存储层以 `1m` 与 `1d` 为 canonical source；其它 resolution 由 backend 聚合。
 - MVP bars 价格口径固定为 `split_adjusted`；未复权 `raw` 价格不作为当前产品需求。
-- `1d` canonical 只保存 completed regular-day bars；当前未完成的 `1D / 1W / 1M / 1Q` 最后一根可由 `1m` 动态拼接。
+- `1d` canonical 只保存 completed regular-day bars；当前未完成的 `1D / 1W / 1M` 最后一根可由 `1m` 动态拼接。
 - 对当前交易日的 mutable tail，backend 通过后台 refresh 任务回源 Massive 并 upsert `1m` canonical。
 - Massive provider truth 可能是 sparse 的；backend 需要支持可选的 fill 策略供图表连续显示。
 - 返回 `X-Data-Source` 与 `X-Partial-Range`，用于前端可视化数据来源与范围截断。

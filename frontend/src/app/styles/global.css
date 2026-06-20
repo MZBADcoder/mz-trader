@@ -442,6 +442,18 @@ p {
   font-size: 13px;
 }
 
+.select-control.fixed-value strong {
+  align-items: center;
+  background: var(--panel-strong);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--text);
+  display: flex;
+  font-size: 13px;
+  min-height: 32px;
+  padding: 0 10px;
+}
+
 .terminal-page {
   min-height: 100vh;
   padding: 16px;

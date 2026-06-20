@@ -84,6 +84,10 @@ class JsonLogFormatter(logging.Formatter):
 class ContextSeqLogHandler(SeqLogHandler):
     """Send standard logging records to Seq with project context fields."""
 
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.setFormatter(logging.Formatter())
+
     def emit(self, record: logging.LogRecord) -> None:
         setattr(
             record,

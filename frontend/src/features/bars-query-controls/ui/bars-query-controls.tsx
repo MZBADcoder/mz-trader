@@ -1,13 +1,11 @@
 import {
   barAdjustmentOptions,
   barResolutions,
-  barSessions,
   supportedBarAdjustments,
   type BarAdjustment,
   type BarAdjustmentOption,
   type BarResolution,
   type BarsControlsValue,
-  type BarSession,
 } from '../model/bars-controls'
 
 import { useI18n } from '@/shared/i18n'
@@ -39,21 +37,10 @@ export function BarsQueryControls({ error, onChange, value }: Props) {
         </div>
       </fieldset>
 
-      <label className="select-control">
+      <div className="select-control fixed-value">
         <span>{t('terminal.session')}</span>
-        <select
-          value={value.session}
-          onChange={(event) =>
-            onChange({ ...value, session: event.target.value as BarSession })
-          }
-        >
-          {barSessions.map((session) => (
-            <option key={session} value={session}>
-              {sessionLabel(session, t)}
-            </option>
-          ))}
-        </select>
-      </label>
+        <strong>{t('terminal.regular')}</strong>
+      </div>
 
       <fieldset>
         <legend>{t('terminal.adjustment')}</legend>
@@ -85,16 +72,6 @@ export function BarsQueryControls({ error, onChange, value }: Props) {
   )
 }
 
-function sessionLabel(session: BarSession, t: (key: `terminal.${string}`) => string) {
-  if (session === 'pre_market') {
-    return t('terminal.preMarket')
-  }
-  if (session === 'after_hours') {
-    return t('terminal.afterHours')
-  }
-  return t('terminal.regular')
-}
-
 function resolutionLabel(resolution: BarResolution, t: (key: `terminal.${string}`) => string) {
   return resolution === 'intraday' ? t('terminal.intraday') : resolution
 }
@@ -107,4 +84,4 @@ function adjustmentLabel(adjustment: BarAdjustmentOption, t: (key: `terminal.${s
   return adjustment === 'raw' ? t('terminal.raw') : t('terminal.adjusted')
 }
 
-export type { BarResolution, BarSession, BarsControlsValue }
+export type { BarResolution, BarsControlsValue }
